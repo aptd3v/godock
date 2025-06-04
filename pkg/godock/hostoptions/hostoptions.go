@@ -1020,6 +1020,27 @@ func Privileged() SetHostOptFn {
 }
 
 /*
+Adds a device to the host configuration.
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.AddDevice("/dev/net/tun", "/dev/net/tun", "rwm"),
+	)
+*/
+func AddDevice(device string, pathInContainer string, permissions string) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		if opt.Devices == nil {
+			opt.Devices = make([]container.DeviceMapping, 0)
+		}
+		opt.Devices = append(opt.Devices, container.DeviceMapping{
+			PathOnHost:        device,
+			PathInContainer:   pathInContainer,
+			CgroupPermissions: permissions,
+		})
+	}
+}
+
+/*
 Adds a containerIDFile to the host configuration.
 After running this command, the /path/to/container-id.txt file will contain the ID of the started container.
 
