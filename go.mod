@@ -1,7 +1,9 @@
 // godock v1.0.0 - Docker client wrapper for Go
 module github.com/aptd3v/godock
 
-go 1.24.4
+go 1.23.0
+
+toolchain go1.24.4
 
 require (
 	github.com/docker/docker v27.3.1+incompatible
