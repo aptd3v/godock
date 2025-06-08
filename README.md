@@ -92,18 +92,9 @@ To use godock in your project, you can install it using one of the following met
 
 ### Using go get
 ```bash
-go get github.com/aptd3v/godock@v1.0.1
+go get github.com/aptd3v/godock@latest
 ```
 
-### Using go.mod
-Add the following to your go.mod file:
-```
-require github.com/aptd3v/godock v1.0.1
-```
-Then run:
-```bash
-go mod tidy
-```
 
 ### Requirements
 - Go 1.23.0 or later
@@ -231,8 +222,10 @@ func main() {
 	}
 
 	// Configure the image to pull
-	img := image.NewConfig("nginx:latest")
-
+	img, err := image.NewConfig("nginx:latest")
+	if err != nil {
+		log.Fatalf("Failed to create image configuration %v", err)
+	}
 	// Pull the image
 	fmt.Println("Pulling nginx image...")
 	if err := client.PullImage(ctx, img); err != nil {
