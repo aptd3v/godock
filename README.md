@@ -92,13 +92,13 @@ To use godock in your project, you can install it using one of the following met
 
 ### Using go get
 ```bash
-go get github.com/aptd3v/godock@v1.0.0
+go get github.com/aptd3v/godock@v1.0.1
 ```
 
 ### Using go.mod
 Add the following to your go.mod file:
 ```
-require github.com/aptd3v/godock v1.0.0
+require github.com/aptd3v/godock v1.0.1
 ```
 Then run:
 ```bash
