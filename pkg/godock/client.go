@@ -12,6 +12,8 @@ import (
 	"github.com/aptd3v/godock/pkg/godock/network"
 	"github.com/aptd3v/godock/pkg/godock/volume"
 	containerType "github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
+	imageType "github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 )
@@ -195,4 +197,101 @@ func isDaemonRunning(ctx context.Context, client *client.Client) (bool, error) {
 		return false, fmt.Errorf("daemon is not running %s", err)
 	}
 	return true, nil
+}
+
+// Network Operations
+
+func (c *Client) RemoveNetwork(ctx context.Context, networkConfig *network.NetworkConfig) error {
+	return c.wrapped.NetworkRemove(ctx, networkConfig.Id)
+}
+
+func (c *Client) ConnectContainerToNetwork(ctx context.Context, networkConfig *network.NetworkConfig, containerConfig *container.ContainerConfig) error {
+	return c.wrapped.NetworkConnect(ctx, networkConfig.Id, containerConfig.Id, nil)
+}
+
+func (c *Client) DisconnectContainerFromNetwork(ctx context.Context, networkConfig *network.NetworkConfig, containerConfig *container.ContainerConfig, force bool) error {
+	return c.wrapped.NetworkDisconnect(ctx, networkConfig.Id, containerConfig.Id, force)
+}
+
+// Volume Operations
+
+func (c *Client) RemoveVolume(ctx context.Context, volumeConfig *volume.VolumeConfig) error {
+	return c.wrapped.VolumeRemove(ctx, volumeConfig.Options.Name, false)
+}
+
+func (c *Client) PruneVolumes(ctx context.Context, filterMap map[string][]string) (uint64, error) {
+	args := filters.NewArgs()
+	for k, v := range filterMap {
+		for _, val := range v {
+			args.Add(k, val)
+		}
+	}
+	report, err := c.wrapped.VolumesPrune(ctx, args)
+	if err != nil {
+		return 0, err
+	}
+	return report.SpaceReclaimed, nil
+}
+
+// Image Operations
+
+func (c *Client) PushImage(ctx context.Context, imageConfig *image.ImageConfig) error {
+	rc, err := c.wrapped.ImagePush(ctx, imageConfig.Ref, *imageConfig.PushOptions)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	if _, err = io.Copy(c.imageResWriter, rc); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) RemoveImage(ctx context.Context, imageConfig *image.ImageConfig, force bool) error {
+	options := imageType.RemoveOptions{
+		Force:         force,
+		PruneChildren: true,
+	}
+	_, err := c.wrapped.ImageRemove(ctx, imageConfig.Ref, options)
+	return err
+}
+
+func (c *Client) TagImage(ctx context.Context, imageConfig *image.ImageConfig, newTag string) error {
+	return c.wrapped.ImageTag(ctx, imageConfig.Ref, newTag)
+}
+
+func (c *Client) SaveImage(ctx context.Context, imageConfig *image.ImageConfig, outputFile string) error {
+	rc, err := c.wrapped.ImageSave(ctx, []string{imageConfig.Ref})
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	file, err := os.Create(outputFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, rc)
+	return err
+}
+
+func (c *Client) LoadImage(ctx context.Context, inputFile string) error {
+	file, err := os.Open(inputFile)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	res, err := c.wrapped.ImageLoad(ctx, file, true)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if _, err = io.Copy(c.imageResWriter, res.Body); err != nil {
+		return err
+	}
+	return nil
 }
