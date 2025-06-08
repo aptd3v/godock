@@ -554,13 +554,15 @@ vol.SetOptions(
     volumeoptions.AddSecret("encryption-key", "my-secret-id"),
     volumeoptions.AddSecret("auth-token", "my-auth-secret"),
 )
-
-Key Differences:
+```
+## Key Differences:
 - 📝 **Readability**: Clear, fluent interface vs nested structs and maps
 - 🔧 **Maintainability**: Options are grouped logically and self-documenting
 - 🚫 **Error Prevention**: Invalid configurations are caught early
 - 🎨 **IDE Support**: Better autocompletion and documentation
 - 🏗️ **Composability**: Easy to build complex configurations from simple parts
+
+
 
 ## Contributing
 
