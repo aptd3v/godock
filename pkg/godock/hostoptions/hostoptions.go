@@ -1142,6 +1142,12 @@ func NoNewPrivileges() SetHostOptFn {
 		if opt.SecurityOpt == nil {
 			opt.SecurityOpt = make([]string, 0)
 		}
+		// Check if no-new-privileges is already present
+		for _, opt := range opt.SecurityOpt {
+			if opt == "no-new-privileges" {
+				return
+			}
+		}
 		opt.SecurityOpt = append(opt.SecurityOpt, "no-new-privileges")
 	}
 }
