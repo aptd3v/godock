@@ -358,9 +358,6 @@ func main() {
 }
 ```
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### 🔄 godock vs Docker SDK
 
@@ -548,3 +545,6 @@ Key Differences:
 - 🎨 **IDE Support**: Better autocompletion and documentation
 - 🏗️ **Composability**: Easy to build complex configurations from simple parts
 
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
