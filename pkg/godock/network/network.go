@@ -14,6 +14,12 @@ type NetworkConfig struct {
 func (n *NetworkConfig) String() string {
 	return n.Name
 }
+func NewConfig(name string) *NetworkConfig {
+	return &NetworkConfig{
+		Name:    name,
+		Options: &network.CreateOptions{},
+	}
+}
 
 func (n *NetworkConfig) SetOptions(setNOFns ...networkoptions.SetNetworkOptions) {
 	for _, set := range setNOFns {

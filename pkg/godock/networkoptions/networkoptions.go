@@ -28,9 +28,9 @@ func Scope(scope string) SetNetworkOptions {
 
 // EnableIPV6 sets whether IPv6 support should be enabled for the Docker network.
 // Use this function to indicate if IPv6 support should be enabled for network communication.
-func EnableIPV6(enable *bool) SetNetworkOptions {
+func EnableIPV6(enable bool) SetNetworkOptions {
 	return func(options *network.CreateOptions) {
-		options.EnableIPv6 = enable
+		options.EnableIPv6 = &enable
 	}
 }
 
