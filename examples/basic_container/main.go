@@ -26,7 +26,10 @@ func main() {
 	}
 
 	// Configure the image to pull
-	img := image.NewConfig("nginx:latest")
+	img, err := image.NewConfig("nginx:latest")
+	if err != nil {
+		log.Fatalf("Failed to create image config: %v", err)
+	}
 
 	// Pull the image
 	fmt.Println("Pulling nginx image...")

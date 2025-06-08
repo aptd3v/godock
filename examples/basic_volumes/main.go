@@ -18,8 +18,8 @@ func main() {
 
 	volume := volume.NewConfig("my-data")
 	volume.SetOptions(
-		volumeoptions.Driver("local"),
-		volumeoptions.Label("backup", "true"),
+		volumeoptions.SetDriver("local"),
+		volumeoptions.AddLabel("backup", "true"),
 	)
 
 	if err := client.CreateVolume(ctx, volume); err != nil {
