@@ -109,6 +109,95 @@ go mod tidy
 - Go 1.23.0 or later
 - Docker Engine running on your system
 
+## Development
+
+### Project Structure
+```
+godock/
+├── examples/              # Example applications and use cases
+│   ├── basic_container/   # Simple container management
+│   ├── container_api/     # REST API for container management
+│   └── webapp/           # Multi-container web application
+├── pkg/
+│   └── godock/           # Main package
+│       ├── container/    # Container management
+│       ├── image/        # Image operations
+│       ├── network/      # Network management
+│       ├── volume/       # Volume management
+│       └── *options/     # Type-safe option packages
+├── CONTRIBUTING.md       # Contribution guidelines
+├── LICENSE              # MIT License
+└── README.md           # This file
+```
+
+### Development Setup
+
+1. **Prerequisites**
+   - Go 1.21 or later
+   - Docker Engine
+   - Git
+
+2. **Clone and Setup**
+   ```bash
+   # Clone the repository
+   git clone https://github.com/YOUR-USERNAME/godock.git
+   cd godock
+
+   # Install dependencies
+   go mod download
+   ```
+
+3. **Verify Setup**
+   ```bash
+   # Run tests
+   go test ./...
+   ```
+
+### Testing
+
+godock uses a comprehensive testing suite including both unit and integration tests:
+
+1. **Run Unit Tests**
+   ```bash
+   go test ./...
+   ```
+
+2. **Run Integration Tests** (requires Docker)
+   ```bash
+   go test ./... -tags=integration
+   ```
+
+3. **Test Coverage**
+   ```bash
+   go test -coverprofile=coverage.out ./...
+   go tool cover -html=coverage.out
+   ```
+
+4. **Run Specific Tests**
+   ```bash
+   # Test a specific package
+   go test ./pkg/godock/container/...
+
+   # Run tests with verbose output
+   go test -v ./...
+   ```
+
+### Contributing
+
+We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on:
+- How to submit changes
+- Coding standards
+- Testing requirements
+- Pull request process
+
+## Contributors
+
+Thank you to all our contributors who help make godock better! 
+
+<a href="https://github.com/aptd3v/godock/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=aptd3v/godock" />
+</a>
+
 ## Quick Start
 
 Here's a simple example that pulls an Nginx image and runs it with port mapping:
