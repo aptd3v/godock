@@ -70,26 +70,35 @@ func (c *Client) GetContainerStats(ctx context.Context, containerConfig *contain
 	return nil
 }
 
-// GetContainerLogs gets logs and is synchronus
-func (c *Client) GetContainerLogs(ctx context.Context, containerConfig *container.ContainerConfig) error {
+// GetContainerLogs returns a ReadCloser for container logs. If a custom log writer is configured,
+// logs will also be written to it asynchronously. Caller is responsible for closing the returned reader.
+func (c *Client) GetContainerLogs(ctx context.Context, containerConfig *container.ContainerConfig) (io.ReadCloser, error) {
 	rc, err := c.wrapped.ContainerLogs(ctx, containerConfig.Id, containerType.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
-		Timestamps: false,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer rc.Close()
 
-	// Create a pipe to demultiplex the logs
-	stdout := c.logResWriter
-	stderr := c.logResWriter
+	// Create a pipe to tee the output
+	pr, pw := io.Pipe()
 
-	// Use Docker's stdcopy to demultiplex the output stream
-	_, err = stdcopy.StdCopy(stdout, stderr, rc)
-	return err
+	// Start copying in background
+	go func() {
+		defer func() {
+			rc.Close()
+			pw.Close()
+		}()
+
+		_, err := io.Copy(io.MultiWriter(pw, c.logResWriter), rc)
+		if err != nil && err != io.ErrClosedPipe {
+			fmt.Printf("Error copying container logs: %v\n", err)
+		}
+	}()
+
+	return pr, nil
 }
 func (c *Client) RemoveContainer(ctx context.Context, containerConfig *container.ContainerConfig, force bool) error {
 	return c.wrapped.ContainerRemove(ctx, containerConfig.Id, containerType.RemoveOptions{
