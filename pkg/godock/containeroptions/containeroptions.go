@@ -345,3 +345,137 @@ func StopSignal(signal string) SetOptionsFns {
 		Config.StopSignal = signal
 	}
 }
+
+/*
+Sets the entrypoint command for the container.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetContainerOptions(
+		containeroptions.Entrypoint("/docker-entrypoint.sh"),
+	)
+*/
+func Entrypoint(entrypoint ...string) SetOptionsFns {
+	return func(Config *container.Config) {
+		Config.Entrypoint = entrypoint
+	}
+}
+
+/*
+Sets a custom shell to use when the image does not have /bin/sh.
+This is used when running shell form commands.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetContainerOptions(
+		containeroptions.Shell("/bin/bash"),
+	)
+*/
+func Shell(shell ...string) SetOptionsFns {
+	return func(Config *container.Config) {
+		Config.Shell = shell
+	}
+}
+
+/*
+Sets the timeout in seconds to stop the container.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetContainerOptions(
+		containeroptions.StopTimeout(30),
+	)
+*/
+func StopTimeout(timeout int) SetOptionsFns {
+	return func(Config *container.Config) {
+		Config.StopTimeout = &timeout
+	}
+}
+
+/*
+Sets whether the container should run with a terminal attached.
+This is similar to TTY() but allows explicitly setting it to false.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetContainerOptions(
+		containeroptions.SetTTY(false),
+	)
+*/
+func SetTTY(enabled bool) SetOptionsFns {
+	return func(Config *container.Config) {
+		Config.Tty = enabled
+	}
+}
+
+/*
+Sets whether stdin should be kept open even if not attached.
+This is similar to OpenStdin() but allows explicitly setting it to false.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetContainerOptions(
+		containeroptions.SetStdinOpen(false),
+	)
+*/
+func SetStdinOpen(open bool) SetOptionsFns {
+	return func(Config *container.Config) {
+		Config.OpenStdin = open
+	}
+}
+
+/*
+Sets whether to attach to stdin.
+This is similar to AttachStdin() but allows explicitly setting it to false.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetContainerOptions(
+		containeroptions.SetStdinAttach(false),
+	)
+*/
+func SetStdinAttach(attach bool) SetOptionsFns {
+	return func(Config *container.Config) {
+		Config.AttachStdin = attach
+	}
+}
+
+/*
+Sets whether to attach to stdout.
+This is similar to AttachStdout() but allows explicitly setting it to false.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetContainerOptions(
+		containeroptions.SetStdoutAttach(false),
+	)
+*/
+func SetStdoutAttach(attach bool) SetOptionsFns {
+	return func(Config *container.Config) {
+		Config.AttachStdout = attach
+	}
+}
+
+/*
+Sets whether to attach to stderr.
+This is similar to AttachStderr() but allows explicitly setting it to false.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetContainerOptions(
+		containeroptions.SetStderrAttach(false),
+	)
+*/
+func SetStderrAttach(attach bool) SetOptionsFns {
+	return func(Config *container.Config) {
+		Config.AttachStderr = attach
+	}
+}
