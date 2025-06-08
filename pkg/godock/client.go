@@ -21,10 +21,16 @@ import (
 
 // ImageProgress represents the JSON output from Docker image operations
 type ImageProgress struct {
-	Status   string `json:"status"`
-	ID       string `json:"id,omitempty"`
+	Stream   string `json:"stream,omitempty"`
+	Status   string `json:"status,omitempty"`
 	Progress string `json:"progress,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Aux      struct {
+		ID string `json:"id,omitempty"`
+	} `json:"aux,omitempty"`
+	ErrorDetail struct {
+		Message string `json:"message,omitempty"`
+	} `json:"errorDetail,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 type Client struct {
