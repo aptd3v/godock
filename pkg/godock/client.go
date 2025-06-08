@@ -2,6 +2,7 @@ package godock
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,14 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 )
+
+// ImageProgress represents the JSON output from Docker image operations
+type ImageProgress struct {
+	Status   string `json:"status"`
+	ID       string `json:"id,omitempty"`
+	Progress string `json:"progress,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
 
 type Client struct {
 	wrapped        *client.Client
@@ -67,18 +76,20 @@ func (c *Client) GetContainerLogs(ctx context.Context, containerConfig *containe
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
+		Timestamps: false,
 	})
 	if err != nil {
 		return err
 	}
 	defer rc.Close()
 
-	if _, err := stdcopy.StdCopy(c.imageResWriter, c.imageResWriter, rc); err != nil {
-		fmt.Println(err)
-		return err
-	}
+	// Create a pipe to demultiplex the logs
+	stdout := c.logResWriter
+	stderr := c.logResWriter
 
-	return nil
+	// Use Docker's stdcopy to demultiplex the output stream
+	_, err = stdcopy.StdCopy(stdout, stderr, rc)
+	return err
 }
 func (c *Client) RemoveContainer(ctx context.Context, containerConfig *container.ContainerConfig, force bool) error {
 	return c.wrapped.ContainerRemove(ctx, containerConfig.Id, containerType.RemoveOptions{
@@ -98,6 +109,11 @@ func (c *Client) RestartContainer(ctx context.Context, containerConfig *containe
 
 func (c *Client) StopContainer(ctx context.Context, containerConfig *container.ContainerConfig) error {
 	return c.wrapped.ContainerStop(ctx, containerConfig.Name, containerType.StopOptions{})
+}
+
+// ContainerWait waits for a container to finish and returns a channel for status and errors
+func (c *Client) ContainerWait(ctx context.Context, containerConfig *container.ContainerConfig) (<-chan containerType.WaitResponse, <-chan error) {
+	return c.wrapped.ContainerWait(ctx, containerConfig.Id, containerType.WaitConditionNotRunning)
 }
 
 func (c *Client) CreateNetwork(ctx context.Context, networkConfig *network.NetworkConfig) error {
@@ -141,8 +157,22 @@ func (c *Client) PullImage(ctx context.Context, imageConfig *image.ImageConfig) 
 		return err
 	}
 	defer rc.Close()
-	if _, err = io.Copy(c.imageResWriter, rc); err != nil {
-		return err
+
+	decoder := json.NewDecoder(rc)
+	for {
+		var progress ImageProgress
+		if err := decoder.Decode(&progress); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+		if progress.Error != "" {
+			return fmt.Errorf("pull error: %s", progress.Error)
+		}
+		if progress.Status != "" {
+			fmt.Fprintf(c.imageResWriter, "%s\n", progress.Status)
+		}
 	}
 	return nil
 }
