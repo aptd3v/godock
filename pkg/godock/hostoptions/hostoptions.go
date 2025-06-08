@@ -3,15 +3,24 @@ package hostoptions
 import (
 	"log"
 	"runtime"
+	"strings"
 
+	"github.com/docker/docker/api/types/blkiodev"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/go-connections/nat"
+	"github.com/docker/go-units"
 )
 
 type SetHostOptFn func(options *container.HostConfig)
 type Capability string
+
+// ThrottleDevice represents a structure for rate limiting device operations
+type ThrottleDevice struct {
+	Path string
+	Rate uint64
+}
 
 const (
 	// GRANTED BY DEFAULT
@@ -745,25 +754,41 @@ func MaskedPaths(maskPaths ...string) SetHostOptFn {
 }
 
 /*
-Adds a network mode to the host configuration. defaults to "none".
-accepted values are: "bridge", "host", "none", and "container:<name|id>".
-Any other value is taken as a custom network's name to which this container should connect to.
+Adds a network mode to the host configuration.
+Accepted values are:
+- "bridge": Use Docker's default bridge network
+- "host": Use the host's network stack
+- "none": No network access
+- "container:<name|id>": Use another container's network namespace
+- "<network-name>": Connect to a user-defined network
+
+Usage example:
 
 	myContainer := container.NewConfig("my_container")
 	myContainer.SetHostOptions(
+		// Use host network
 		hostoptions.NetworkMode("host"),
+		// Or connect to a user-defined network
+		hostoptions.NetworkMode("my-custom-network"),
+		// Or share network namespace with another container
+		hostoptions.NetworkMode("container:another-container"),
 	)
 */
 func NetworkMode(mode string) SetHostOptFn {
-	switch mode {
-	case "bridge", "host", "none", "container":
-
-		return func(opt *container.HostConfig) {
+	return func(opt *container.HostConfig) {
+		// Handle container network namespace sharing
+		if strings.HasPrefix(mode, "container:") {
 			opt.NetworkMode = container.NetworkMode(mode)
+			return
 		}
-	default:
-		return func(opt *container.HostConfig) {
-			opt.NetworkMode = container.NetworkMode("none")
+
+		// Handle standard modes
+		switch mode {
+		case "bridge", "host", "none":
+			opt.NetworkMode = container.NetworkMode(mode)
+		default:
+			// Any other value is treated as a custom network name
+			opt.NetworkMode = container.NetworkMode(mode)
 		}
 	}
 }
@@ -1052,5 +1077,399 @@ After running this command, the /path/to/container-id.txt file will contain the 
 func ContainerIDFile(containerIDFile string) SetHostOptFn {
 	return func(opt *container.HostConfig) {
 		opt.ContainerIDFile = containerIDFile
+	}
+}
+
+/*
+CPUShares sets the CPU shares (relative weight) for the container
+*/
+func CPUShares(shares int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.CPUShares = shares
+	}
+}
+
+/*
+CPUPeriod sets the CPU CFS (Completely Fair Scheduler) period
+*/
+func CPUPeriod(period int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.CPUPeriod = period
+	}
+}
+
+/*
+CPUQuota sets the CPU CFS (Completely Fair Scheduler) quota
+*/
+func CPUQuota(quota int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.CPUQuota = quota
+	}
+}
+
+/*
+CpusetCpus sets the CPUs in which execution is allowed
+*/
+func CpusetCpus(cpus string) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.CpusetCpus = cpus
+	}
+}
+
+/*
+MemoryReservation sets the memory soft limit
+*/
+func MemoryReservation(memory int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.MemoryReservation = memory
+	}
+}
+
+/*
+MemorySwap sets the total memory limit (memory + swap)
+*/
+func MemorySwap(memorySwap int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.MemorySwap = memorySwap
+	}
+}
+
+/*
+NoNewPrivileges disables new privileges from being acquired
+*/
+func NoNewPrivileges() SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		if opt.SecurityOpt == nil {
+			opt.SecurityOpt = make([]string, 0)
+		}
+		opt.SecurityOpt = append(opt.SecurityOpt, "no-new-privileges")
+	}
+}
+
+/*
+Ulimits sets ulimit options
+*/
+func Ulimits(ulimits []*units.Ulimit) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.Ulimits = ulimits
+	}
+}
+
+/*
+Init runs an init inside the container
+*/
+func Init() SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		t := true
+		opt.Init = &t
+	}
+}
+
+/*
+CPURealtimePeriod sets the CPU real-time period in microseconds.
+This option is only applicable when running containers on operating systems
+that support CPU real-time scheduler.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.CPURealtimePeriod(100000),
+	)
+*/
+func CPURealtimePeriod(period int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.CPURealtimePeriod = period
+	}
+}
+
+/*
+CPURealtimeRuntime sets the CPU real-time runtime in microseconds.
+This option is only applicable when running containers on operating systems
+that support CPU real-time scheduler.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.CPURealtimeRuntime(95000),
+	)
+*/
+func CPURealtimeRuntime(runtime int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.CPURealtimeRuntime = runtime
+	}
+}
+
+/*
+CpusetMems sets the memory nodes in which execution is allowed.
+Only effective on NUMA systems.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.CpusetMems("0-1"),
+	)
+*/
+func CpusetMems(mems string) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.CpusetMems = mems
+	}
+}
+
+/*
+MemorySwappiness tunes container memory swappiness (0 to 100).
+- A value of 0 turns off anonymous page swapping.
+- A value of 100 sets the host's swappiness value.
+- Values between 0 and 100 modify the swappiness level accordingly.
+
+Usage example:
+
+	swappiness := int64(60)
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.MemorySwappiness(&swappiness),
+	)
+*/
+func MemorySwappiness(swappiness *int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.MemorySwappiness = swappiness
+	}
+}
+
+/*
+KernelMemory sets the kernel memory limit in bytes.
+This is the hard limit for kernel memory that cannot be swapped out.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.KernelMemory(int64(50 * 1024 * 1024)), // 50MB kernel memory
+	)
+*/
+func KernelMemory(memory int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.KernelMemory = memory
+	}
+}
+
+/*
+PidsLimit sets the container's PIDs limit.
+Set to -1 for unlimited PIDs.
+
+Usage example:
+
+	limit := int64(100)
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.PidsLimit(&limit),
+	)
+*/
+func PidsLimit(limit *int64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.PidsLimit = limit
+	}
+}
+
+/*
+BlkioWeight sets the block IO weight (relative weight) for the container.
+Weight is a value between 10 and 1000.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.BlkioWeight(500),
+	)
+*/
+func BlkioWeight(weight uint16) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.BlkioWeight = weight
+	}
+}
+
+/*
+BlkioDeviceReadBps sets the rate at which a device can be read in bytes per second.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.BlkioDeviceReadBps("/dev/sda", 1024*1024), // 1MB/s
+	)
+*/
+func BlkioDeviceReadBps(devicePath string, rate uint64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		if opt.BlkioDeviceReadBps == nil {
+			opt.BlkioDeviceReadBps = make([]*blkiodev.ThrottleDevice, 0)
+		}
+		opt.BlkioDeviceReadBps = append(opt.BlkioDeviceReadBps, &blkiodev.ThrottleDevice{
+			Path: devicePath,
+			Rate: rate,
+		})
+	}
+}
+
+/*
+BlkioDeviceWriteBps sets the rate at which a device can be written in bytes per second.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.BlkioDeviceWriteBps("/dev/sda", 1024*1024), // 1MB/s
+	)
+*/
+func BlkioDeviceWriteBps(devicePath string, rate uint64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		if opt.BlkioDeviceWriteBps == nil {
+			opt.BlkioDeviceWriteBps = make([]*blkiodev.ThrottleDevice, 0)
+		}
+		opt.BlkioDeviceWriteBps = append(opt.BlkioDeviceWriteBps, &blkiodev.ThrottleDevice{
+			Path: devicePath,
+			Rate: rate,
+		})
+	}
+}
+
+/*
+BlkioDeviceReadIOps sets the rate at which read operations can be performed on a device.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.BlkioDeviceReadIOps("/dev/sda", 1000), // 1000 IOPS
+	)
+*/
+func BlkioDeviceReadIOps(devicePath string, rate uint64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		if opt.BlkioDeviceReadIOps == nil {
+			opt.BlkioDeviceReadIOps = make([]*blkiodev.ThrottleDevice, 0)
+		}
+		opt.BlkioDeviceReadIOps = append(opt.BlkioDeviceReadIOps, &blkiodev.ThrottleDevice{
+			Path: devicePath,
+			Rate: rate,
+		})
+	}
+}
+
+/*
+BlkioDeviceWriteIOps sets the rate at which write operations can be performed on a device.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.BlkioDeviceWriteIOps("/dev/sda", 1000), // 1000 IOPS
+	)
+*/
+func BlkioDeviceWriteIOps(devicePath string, rate uint64) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		if opt.BlkioDeviceWriteIOps == nil {
+			opt.BlkioDeviceWriteIOps = make([]*blkiodev.ThrottleDevice, 0)
+		}
+		opt.BlkioDeviceWriteIOps = append(opt.BlkioDeviceWriteIOps, &blkiodev.ThrottleDevice{
+			Path: devicePath,
+			Rate: rate,
+		})
+	}
+}
+
+/*
+Sysctls sets namespaced kernel parameters (sysctls) in the container.
+These parameters can be used to tune and configure container behavior.
+
+Usage example:
+
+	sysctls := map[string]string{
+		"net.ipv4.ip_forward": "1",
+	}
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.Sysctls(sysctls),
+	)
+*/
+func Sysctls(sysctls map[string]string) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.Sysctls = sysctls
+	}
+}
+
+/*
+DeviceCgroupRules sets a list of cgroup rules to allow the container to access devices.
+The rules are in the format specified by the Linux kernel documentation.
+
+Usage example:
+
+	rules := []string{
+		"c 1:3 rwm",
+		"a 7:* rmw",
+	}
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.DeviceCgroupRules(rules),
+	)
+*/
+func DeviceCgroupRules(rules []string) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.DeviceCgroupRules = rules
+	}
+}
+
+/*
+CgroupParent sets the parent cgroup for the container.
+This allows for resource sharing and limits inheritance from a parent cgroup.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	myContainer.SetHostOptions(
+		hostoptions.CgroupParent("/my/custom/cgroup"),
+	)
+*/
+func CgroupParent(parent string) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		opt.CgroupParent = parent
+	}
+}
+
+/*
+DeviceRequest adds a device request for the container.
+This is commonly used for requesting access to GPUs or other specialized hardware.
+
+Usage example:
+
+	myContainer := container.NewConfig("my_container")
+	// Request a specific NVIDIA GPU
+	myContainer.SetHostOptions(
+		hostoptions.DeviceRequest("nvidia", 1, []string{"0"}, []string{"gpu", "compute", "utility"}),
+	)
+
+	// Request any two NVIDIA GPUs
+	myContainer.SetHostOptions(
+		hostoptions.DeviceRequest("nvidia", 2, nil, []string{"gpu", "compute"}),
+	)
+*/
+func DeviceRequest(driver string, count int, deviceIDs []string, capabilities []string) SetHostOptFn {
+	return func(opt *container.HostConfig) {
+		if opt.DeviceRequests == nil {
+			opt.DeviceRequests = make([]container.DeviceRequest, 0)
+		}
+
+		// Convert capabilities to the required format
+		var caps [][]string
+		if len(capabilities) > 0 {
+			caps = [][]string{capabilities}
+		}
+
+		opt.DeviceRequests = append(opt.DeviceRequests, container.DeviceRequest{
+			Driver:       driver,
+			Count:        count,
+			DeviceIDs:    deviceIDs,
+			Capabilities: caps,
+		})
 	}
 }
