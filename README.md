@@ -88,9 +88,26 @@ Check out our examples directory for usage:
 
 ## Installation
 
+To use godock in your project, you can install it using one of the following methods:
+
+### Using go get
 ```bash
-go get github.com/aptd3v/godock
+go get github.com/aptd3v/godock@v1.0.0
 ```
+
+### Using go.mod
+Add the following to your go.mod file:
+```
+require github.com/aptd3v/godock v1.0.0
+```
+Then run:
+```bash
+go mod tidy
+```
+
+### Requirements
+- Go 1.23.0 or later
+- Docker Engine running on your system
 
 ## Quick Start
 
