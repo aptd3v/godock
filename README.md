@@ -458,7 +458,8 @@ func main() {
 ```
 
 
-### 🔄 godock vs Docker SDK
+
+## 🔄 godock vs Docker SDK
 
 Here's how godock simplifies Docker operations compared to the raw Docker SDK:
 
