@@ -115,3 +115,103 @@ func Endpoint(name string, endpoint *endpointoptions.Endpoint) SetContainerNetwo
 		net.EndpointsConfig[name] = endpoint.Settings
 	}
 }
+
+/*
+Labels sets multiple labels at once for the network.
+This is a convenience function when you need to set multiple labels.
+
+Usage example:
+
+	labels := map[string]string{
+		"environment": "production",
+		"project": "myapp",
+	}
+	myNetwork := network.NewConfig("my_network")
+	myNetwork.SetNetworkOptions(
+		networkoptions.Labels(labels),
+	)
+*/
+func Labels(labels map[string]string) SetNetworkOptions {
+	return func(options *network.CreateOptions) {
+		if options.Labels == nil {
+			options.Labels = make(map[string]string)
+		}
+		for k, v := range labels {
+			options.Labels[k] = v
+		}
+	}
+}
+
+/*
+IPAMDriver sets the IPAM driver for the network.
+This configures which driver will handle IP address management.
+
+Usage example:
+
+	myNetwork := network.NewConfig("my_network")
+	myNetwork.SetNetworkOptions(
+		networkoptions.IPAMDriver("default"),
+	)
+*/
+func IPAMDriver(driver string) SetNetworkOptions {
+	return func(options *network.CreateOptions) {
+		if options.IPAM == nil {
+			options.IPAM = &network.IPAM{}
+		}
+		options.IPAM.Driver = driver
+	}
+}
+
+/*
+IPAMConfig adds an IPAM configuration for a subnet.
+This allows you to configure subnet, IP range, and gateway for the network.
+
+Usage example:
+
+	myNetwork := network.NewConfig("my_network")
+	myNetwork.SetNetworkOptions(
+		networkoptions.IPAMConfig("172.20.0.0/16", "172.20.10.0/24", "172.20.10.11"),
+	)
+*/
+func IPAMConfig(subnet, ipRange, gateway string) SetNetworkOptions {
+	return func(options *network.CreateOptions) {
+		if options.IPAM == nil {
+			options.IPAM = &network.IPAM{
+				Driver: "default",
+			}
+		}
+		if options.IPAM.Config == nil {
+			options.IPAM.Config = make([]network.IPAMConfig, 0)
+		}
+		options.IPAM.Config = append(options.IPAM.Config, network.IPAMConfig{
+			Subnet:  subnet,
+			IPRange: ipRange,
+			Gateway: gateway,
+		})
+	}
+}
+
+/*
+IPAMOptions adds IPAM driver specific options.
+This allows you to set custom options for the IPAM driver.
+
+Usage example:
+
+	myNetwork := network.NewConfig("my_network")
+	myNetwork.SetNetworkOptions(
+		networkoptions.IPAMOptions("opt1", "value1"),
+	)
+*/
+func IPAMOptions(key, value string) SetNetworkOptions {
+	return func(options *network.CreateOptions) {
+		if options.IPAM == nil {
+			options.IPAM = &network.IPAM{
+				Driver: "default",
+			}
+		}
+		if options.IPAM.Options == nil {
+			options.IPAM.Options = make(map[string]string)
+		}
+		options.IPAM.Options[key] = value
+	}
+}
