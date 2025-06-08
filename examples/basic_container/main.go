@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/aptd3v/godock/pkg/godock"
@@ -52,11 +55,22 @@ func main() {
 	if err := client.StartContainer(ctx, container); err != nil {
 		log.Fatalf("Failed to start container: %v", err)
 	}
-
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		Cleanup(client, container)
+		os.Exit(1)
+	}()
 	fmt.Println("Container is running! Press Ctrl+C to stop...")
 
 	// Wait for a while to see the container running
-	time.Sleep(30 * time.Second)
+	time.Sleep(10 * time.Second)
+	Cleanup(client, container)
+}
+
+func Cleanup(client *godock.Client, container *container.ContainerConfig) {
+	ctx := context.Background()
 
 	// Stop the container
 	fmt.Println("Stopping container...")
