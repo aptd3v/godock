@@ -114,9 +114,7 @@ go get github.com/aptd3v/godock@latest
 ```
 godock/
 ├── examples/              # Example applications and use cases
-│   ├── basic_container/   # Simple container management
-│   ├── container_api/     # REST API for container management
-│   └── webapp/           # Multi-container web application
+│   ├──*examples/
 ├── pkg/
 │   └── godock/           # Main package
 │       ├── container/    # Container management
