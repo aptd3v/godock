@@ -7,7 +7,10 @@
   <img src="gopher.png" alt="Godock Gopher" width="200" style="margin-left: 20px;">
 </div>
 
+
+
 ## Why godock?
+[![Go Report Card](https://goreportcard.com/badge/github.com/aptd3v/godock)](https://goreportcard.com/report/github.com/aptd3v/godock)
 
 godock was created to make Docker container management in Go more intuitive, type-safe, and maintainable. Here's why you might want to use it:
 
