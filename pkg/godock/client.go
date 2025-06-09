@@ -873,3 +873,27 @@ func (c *Client) ContainerPrune(ctx context.Context, pruneOptions ...PruneOption
 		ContainersDeleted: prune.ContainersDeleted,
 	}, nil
 }
+
+type ImagePruneResponse struct {
+	SpaceReclaimed uint64   `json:"SpaceReclaimed,omitempty"`
+	ImagesDeleted  []string `json:"ImagesDeleted,omitempty"`
+}
+
+func (c *Client) PruneImages(ctx context.Context, pruneOptions ...PruneOptionFn) (ImagePruneResponse, error) {
+	filter := filters.NewArgs()
+	for _, fn := range pruneOptions {
+		fn(&filter)
+	}
+	prune, err := c.wrapped.ImagesPrune(ctx, filter)
+	if err != nil {
+		return ImagePruneResponse{}, fmt.Errorf("failed to prune images: %w", err)
+	}
+	imagesDeleted := make([]string, 0, len(prune.ImagesDeleted))
+	for _, image := range prune.ImagesDeleted {
+		imagesDeleted = append(imagesDeleted, image.Deleted)
+	}
+	return ImagePruneResponse{
+		SpaceReclaimed: prune.SpaceReclaimed,
+		ImagesDeleted:  imagesDeleted,
+	}, nil
+}
