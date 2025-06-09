@@ -19,7 +19,7 @@ godock was created to make Docker container management in Go more intuitive, typ
 // godock enforces type safety through dedicated option functions
 redis.SetContainerOptions(
 	containeroptions.Image(redisImage),      // Type-safe image configuration
-	containeroptions.Expose("6379"),         // Port validation
+	containeroptions.Expose("6379"), 
 	containeroptions.Label("env", "prod"),   // Structured labels
 )
 
