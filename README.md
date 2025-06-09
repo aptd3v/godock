@@ -2,7 +2,7 @@
 
 <div style="display: flex; align-items: center; justify-content: space-between;">
   <div>
-    A type-safe, developer-friendly wrapper around Docker's Go SDK.
+    A declarative, developer-friendly wrapper around Docker's Go SDK.
   </div>
   <img src="gopher.png" alt="Godock Gopher" width="200" style="margin-left: 20px;">
 </div>
