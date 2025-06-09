@@ -31,7 +31,7 @@ container := &container.Config{
 ```
 
 ### 🎨 Clean, Fluent API
-- Builder pattern for intuitive configuration
+- Function Options Pattern for intuitive configuration
 - Clear separation between container, host, and network options
 - Self-documenting function names
 - IDE-friendly with great autocompletion
