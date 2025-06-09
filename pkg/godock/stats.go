@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"time"
+
+	"github.com/docker/docker/api/types/container"
 )
 
 type formater struct{ writer io.Writer }
@@ -18,8 +21,6 @@ func (f *formater) Write(p []byte) (n int, err error) {
 		return 0, err
 	}
 	b, err := json.Marshal(&FormatedContainerStats{
-		ID:          data.ID,
-		Name:        data.Name,
 		CpuUsage:    data.FormatCpuUsagePercentage(),
 		MemoryUsage: data.FormatMemoryUsage(),
 		NetworkIO:   data.FormatNetworkIO(),
@@ -37,12 +38,11 @@ func (f *formater) Write(p []byte) (n int, err error) {
 
 // Formats the incoming stats and passes it to the supplied writer
 func StatsFormatter(writer io.Writer) *formater {
+	// container.Stats{}
 	return &formater{writer: writer}
 }
 
 type FormatedContainerStats struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
 	CpuUsage    string `json:"cpuUsage"`
 	MemoryUsage string `json:"memoryUsage"`
 	NetworkIO   string `json:"networkIO"`
@@ -50,111 +50,35 @@ type FormatedContainerStats struct {
 }
 
 type ContainerStats struct {
-	Name      string `json:"name"`
-	ID        string `json:"id"`
-	Read      string `json:"read"`
-	Preread   string `json:"preread"`
-	PidsStats struct {
-		Current int64       `json:"current"`
-		Limit   json.Number `json:"limit"`
-	} `json:"pidsStats"`
-	BlkioStats struct {
-		IoServiceBytesRecursive []any `json:"ioServiceBytesRecursive"`
-		IoServicedRecursive     []any `json:"ioServicedRecursive"`
-		IoQueueRecursive        []any `json:"ioQueueRecursive"`
-		IoServiceTimeRecursive  []any `json:"ioServiceTimeRecursive"`
-		IoWaitTimeRecursive     []any `json:"ioWaitTimeRecursive"`
-		IoMergedRecursive       []any `json:"ioMergedRecursive"`
-		IoTimeRecursive         []any `json:"ioTimeRecursive"`
-		SectorsRecursive        []any `json:"sectorsRecursive"`
-	} `json:"blkioStats"`
-	NumProcs     int64    `json:"numProcs"`
-	StorageStats struct{} `json:"storageStats"`
-	CpuStats     struct {
-		CpuUsage struct {
-			TotalUsage        int64 `json:"totalUsage"`
-			UsageInKernelMode int64 `json:"usageInKernelmode"`
-			UsageInUserMode   int64 `json:"usageInUsermode"`
-		} `json:"cpuUsage"`
-		SystemCPUUsage int64 `json:"systemCpuUsage"`
-		OnlineCPUs     int64 `json:"onlineCpus"`
-		ThrottlingData struct {
-			Periods          int64 `json:"periods"`
-			ThrottledPeriods int64 `json:"throttledPeriods"`
-			ThrottledTime    int64 `json:"throttledTime"`
-		} `json:"throttlingData"`
-	} `json:"cpuStats"`
-	PreCPUStats struct {
-		CpuUsage struct {
-			TotalUsage        int64 `json:"totalUsage"`
-			UsageInKernelMode int64 `json:"usageInKernelmode"`
-			UsageInUserMode   int64 `json:"usageInUsermode"`
-		} `json:"cpuUsage"`
-		SystemCPUUsage int64 `json:"systemCpuUsage"`
-		OnlineCPUs     int64 `json:"onlineCpus"`
-		ThrottlingData struct {
-			Periods          int64 `json:"periods"`
-			ThrottledPeriods int64 `json:"throttledPeriods"`
-			ThrottledTime    int64 `json:"throttledTime"`
-		} `json:"throttlingData"`
-	} `json:"precpuStats"`
-	MemoryStats struct {
-		Usage int64 `json:"usage"`
-		Stats struct {
-			ActiveAnon          int64 `json:"activeAnon"`
-			ActiveFile          int64 `json:"activeFile"`
-			Anon                int64 `json:"anon"`
-			AnonTHP             int64 `json:"anonTHP"`
-			File                int64 `json:"file"`
-			FileDirty           int64 `json:"fileDirty"`
-			FileMapped          int64 `json:"fileMapped"`
-			FileWriteBack       int64 `json:"fileWriteback"`
-			InactiveAnon        int64 `json:"inactiveAnon"`
-			InactiveFile        int64 `json:"inactiveFile"`
-			KernelStack         int64 `json:"kernelStack"`
-			PgActivate          int64 `json:"pgActivate"`
-			PgDeactivate        int64 `json:"pgDeactivate"`
-			PgFault             int64 `json:"pgFault"`
-			PgLazyFree          int64 `json:"pgLazyFree"`
-			PgLazyFreed         int64 `json:"pgLazyFreed"`
-			PgMajFault          int64 `json:"pgMajFault"`
-			PgRefill            int64 `json:"pgRefill"`
-			PgScan              int64 `json:"pgScan"`
-			PgSteal             int64 `json:"pgSteal"`
-			Shmem               int64 `json:"shmem"`
-			Slab                int64 `json:"slab"`
-			SlabReclaimable     int64 `json:"slabReclaimable"`
-			SlabUnreclaimable   int64 `json:"slabUnreclaimable"`
-			Sock                int64 `json:"sock"`
-			ThpCollapseAlloc    int64 `json:"thpCollapseAlloc"`
-			ThpFaultAlloc       int64 `json:"thpFaultAlloc"`
-			Unevictable         int64 `json:"unevictable"`
-			WorkingSetActivate  int64 `json:"workingsetActivate"`
-			WorkingSetNoReclaim int64 `json:"workingsetNodereclaim"`
-			WorkingSetRefault   int64 `json:"workingsetRefault"`
-		} `json:"stats"`
-		Limit int64 `json:"limit"`
-	} `json:"memoryStats"`
-	Networks struct {
-		Eth0 struct {
-			RxBytes   int64 `json:"rxBytes"`
-			RxPackets int64 `json:"rxPackets"`
-			RxErrors  int64 `json:"rxErrors"`
-			RxDropped int64 `json:"rxDropped"`
-			TxBytes   int64 `json:"txBytes"`
-			TxPackets int64 `json:"txPackets"`
-			TxErrors  int64 `json:"txErrors"`
-			TxDropped int64 `json:"txDropped"`
-		} `json:"eth0"`
-	} `json:"networks"`
+	Read         time.Time               `json:"read"`
+	Preread      time.Time               `json:"preread"`
+	PidsStats    container.PidsStats     `json:"pids_stats"`
+	BlkioStats   container.BlkioStats    `json:"blkio_stats"`
+	NumProcs     int64                   `json:"num_procs"`
+	StorageStats container.StorageStats  `json:"storage_stats"`
+	CpuStats     container.CPUStats      `json:"cpu_stats"`
+	PreCPUStats  container.CPUStats      `json:"precpu_stats"`
+	MemoryStats  container.MemoryStats   `json:"memory_stats"`
+	Networks     map[string]NetworkStats `json:"networks"`
+}
+
+type NetworkStats struct {
+	RxBytes   uint64 `json:"rx_bytes"`
+	RxDropped uint64 `json:"rx_dropped"`
+	RxErrors  uint64 `json:"rx_errors"`
+	RxPackets uint64 `json:"rx_packets"`
+	TxBytes   uint64 `json:"tx_bytes"`
+	TxDropped uint64 `json:"tx_dropped"`
+	TxErrors  uint64 `json:"tx_errors"`
+	TxPackets uint64 `json:"tx_packets"`
 }
 
 func (stats *ContainerStats) FormatCpuUsagePercentage() string {
 	// Calculate the total CPU time used by the container
-	totalCPUUsage := float64(stats.CpuStats.CpuUsage.TotalUsage - stats.PreCPUStats.CpuUsage.TotalUsage)
+	totalCPUUsage := float64(stats.CpuStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
 
 	// Calculate the system CPU time
-	systemCPUUsage := float64(stats.CpuStats.SystemCPUUsage - stats.PreCPUStats.SystemCPUUsage)
+	systemCPUUsage := float64(stats.CpuStats.SystemUsage - stats.PreCPUStats.SystemUsage)
 
 	// Calculate the number of online CPUs
 	onlineCPUs := float64(stats.CpuStats.OnlineCPUs)
@@ -172,44 +96,51 @@ func (stats *ContainerStats) FormatMemoryUsage() string {
 	memoryLimit := stats.MemoryStats.Limit
 
 	// Convert the memory usage and limit to human-readable strings
-	memoryUsageStr := bytesToHumanReadable(memoryUsage)
-	memoryLimitStr := bytesToHumanReadable(memoryLimit)
+	memoryUsageStr := bytesToHumanReadable(int64(memoryUsage))
+	memoryLimitStr := bytesToHumanReadable(int64(memoryLimit))
 
 	// Combine the strings and return the result
 	return fmt.Sprintf("%s / %s", memoryUsageStr, memoryLimitStr)
 }
-func (stats *ContainerStats) FormatNetworkIO() string {
-	// Get the network I/O values in bytes
-	rxBytes := stats.Networks.Eth0.RxBytes
-	txBytes := stats.Networks.Eth0.TxBytes
 
-	// Convert the network I/O values to human-readable strings
-	rxBytesStr := bytesToHumanReadable(rxBytes)
-	txBytesStr := bytesToHumanReadable(txBytes)
-
-	// Combine the strings and return the result
-	return fmt.Sprintf("%s / %s", rxBytesStr, txBytesStr)
-}
 func (stats *ContainerStats) FormatDiskIO() string {
 	// Get the disk read/write values in bytes
-	readBytes := int64(0)
-	writeBytes := int64(0)
+	var readBytes, writeBytes uint64
 
-	if len(stats.BlkioStats.IoServiceBytesRecursive) >= 2 {
-		if readVal, ok := stats.BlkioStats.IoServiceBytesRecursive[0].(float64); ok {
-			readBytes = int64(readVal)
-		}
-		if writeVal, ok := stats.BlkioStats.IoServiceBytesRecursive[1].(float64); ok {
-			writeBytes = int64(writeVal)
+	// Sum up all read and write operations
+	for _, stat := range stats.BlkioStats.IoServiceBytesRecursive {
+		switch stat.Op {
+		case "Read":
+			readBytes += stat.Value
+		case "Write":
+			writeBytes += stat.Value
 		}
 	}
+
 	// Convert the disk read/write values to human-readable strings
-	readBytesStr := bytesToHumanReadable(readBytes)
-	writeBytesStr := bytesToHumanReadable(writeBytes)
+	readBytesStr := bytesToHumanReadable(int64(readBytes))
+	writeBytesStr := bytesToHumanReadable(int64(writeBytes))
 
 	// Combine the strings and return the result
 	return fmt.Sprintf("%s / %s", readBytesStr, writeBytesStr)
 }
+
+func (stats *ContainerStats) FormatNetworkIO() string {
+	var totalRx, totalTx uint64
+
+	// Sum up all network interfaces
+	for _, net := range stats.Networks {
+		totalRx += net.RxBytes
+		totalTx += net.TxBytes
+	}
+
+	// Convert to human readable format
+	rxStr := bytesToHumanReadable(int64(totalRx))
+	txStr := bytesToHumanReadable(int64(totalTx))
+
+	return fmt.Sprintf("%s / %s", rxStr, txStr)
+}
+
 func bytesToHumanReadable(bytes int64) string {
 	// Define the units and their corresponding values in bytes
 	units := []string{"B", "KB", "MB", "GB", "TB", "PB", "EB"}
