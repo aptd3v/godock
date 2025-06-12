@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/aptd3v/godock/pkg/godock/container"
-	"github.com/aptd3v/godock/pkg/godock/errors"
+	"github.com/aptd3v/godock/pkg/godock/errdefs"
 	"github.com/aptd3v/godock/pkg/godock/exec"
 	"github.com/aptd3v/godock/pkg/godock/execoptions"
 	"github.com/aptd3v/godock/pkg/godock/image"
@@ -73,9 +73,9 @@ func TestClientCreation(t *testing.T) {
 
 		client, err := NewClient(ctx)
 		require.Error(t, err)
-		require.ErrorIs(t, err, errors.ErrDaemonNotRunning)
+		require.ErrorIs(t, err, errdefs.ErrDaemonNotRunning)
 
-		var dne *errors.DaemonNotRunningError
+		var dne *errdefs.DaemonNotRunningError
 		require.ErrorAs(t, err, &dne)
 		require.Contains(t, dne.Error(), "docker daemon is not running: connection refused")
 		require.Nil(t, client)

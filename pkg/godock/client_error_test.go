@@ -9,14 +9,14 @@ import (
 
 	"github.com/aptd3v/godock/pkg/godock/container"
 	"github.com/aptd3v/godock/pkg/godock/containeroptions"
-	"github.com/aptd3v/godock/pkg/godock/errors"
+	"github.com/aptd3v/godock/pkg/godock/errdefs"
 	"github.com/aptd3v/godock/pkg/godock/hostoptions"
 	"github.com/aptd3v/godock/pkg/godock/image"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestClientErrors(t *testing.T) {
+func TestClienterrdefs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test")
 	}
@@ -81,9 +81,9 @@ func TestClientErrors(t *testing.T) {
 
 		err := client.ContainerCreate(ctx, config)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, errors.ErrNotFound)
+		assert.ErrorIs(t, err, errdefs.ErrNotFound)
 
-		var nfe *errors.ResourceNotFoundError
+		var nfe *errdefs.ResourceNotFoundError
 		require.ErrorAs(t, err, &nfe)
 		assert.Equal(t, "image", nfe.ResourceType)
 		assert.Equal(t, "nonexistent:latest", nfe.ID)
@@ -107,9 +107,9 @@ func TestClientErrors(t *testing.T) {
 		config2.Options.Image = "alpine:latest"
 		err = client.ContainerCreate(ctx, config2)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, errors.ErrAlreadyExists)
+		assert.ErrorIs(t, err, errdefs.ErrAlreadyExists)
 
-		var ee *errors.ResourceExistsError
+		var ee *errdefs.ResourceExistsError
 		require.ErrorAs(t, err, &ee)
 		assert.Equal(t, "container", ee.ResourceType)
 		assert.Equal(t, "test-exists", ee.ID)
@@ -153,9 +153,9 @@ func TestClientErrors(t *testing.T) {
 
 		err = client.ContainerStart(ctx, config2)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, errors.ErrAlreadyExists)
+		assert.ErrorIs(t, err, errdefs.ErrAlreadyExists)
 
-		var ee *errors.ResourceExistsError
+		var ee *errdefs.ResourceExistsError
 		require.ErrorAs(t, err, &ee)
 		assert.Equal(t, "port", ee.ResourceType)
 		assert.Equal(t, "test-port2", ee.ID)
@@ -164,9 +164,9 @@ func TestClientErrors(t *testing.T) {
 	t.Run("InvalidConfig/NilConfig", func(t *testing.T) {
 		err := client.ContainerCreate(ctx, nil)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, errors.ErrInvalidConfig)
+		assert.ErrorIs(t, err, errdefs.ErrInvalidConfig)
 
-		var ve *errors.ValidationError
+		var ve *errdefs.ValidationError
 		require.ErrorAs(t, err, &ve)
 		assert.Equal(t, "containerConfig", ve.Field)
 		assert.Equal(t, "container config cannot be nil", ve.Message)
@@ -189,7 +189,7 @@ func TestClientErrors(t *testing.T) {
 		err = client.ContainerStart(ctx, config)
 		require.Error(t, err)
 
-		var ce *errors.ContainerError
+		var ce *errdefs.ContainerError
 		require.ErrorAs(t, err, &ce)
 		assert.Equal(t, "test-cmd", ce.ID)
 		assert.Equal(t, "start", ce.Op)
@@ -208,7 +208,7 @@ func TestClientErrors(t *testing.T) {
 
 		err := client.RunAndWait(ctx, config)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, errors.ErrTimeout)
+		assert.ErrorIs(t, err, errdefs.ErrTimeout)
 
 		cleanup("test-timeout") // Clean up after test
 	})
@@ -229,7 +229,7 @@ func TestClientErrors(t *testing.T) {
 
 		err := client.RunAndWait(ctx, config)
 		require.Error(t, err)
-		assert.ErrorIs(t, err, errors.ErrCanceled)
+		assert.ErrorIs(t, err, errdefs.ErrCanceled)
 
 		cleanup("test-cancel") // Clean up after test
 	})
