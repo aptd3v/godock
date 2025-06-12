@@ -24,7 +24,7 @@ godock simplifies Docker operations in Go by providing:
 
 ## Installation
 
-Using `go get` (outside a module):
+Using `go get` 
 ```bash
 go get github.com/aptd3v/godock@latest
 ```
