@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -46,20 +47,21 @@ func main() {
 		networkoptions.Attachable(),
 	)
 
-	if err := client.CreateNetwork(ctx, net); err != nil {
+	if err := client.NetworkCreate(ctx, net); err != nil {
 		log.Fatalf("Failed to create network: %v", err)
 	}
 
 	// Pull Redis image
-	image, err := image.NewConfig("redis")
-	if err != nil {
-		log.Fatalf("Failed to create image: %v", err)
-	}
-	err = client.PullImage(ctx, image)
+	image := image.NewConfig("redis")
+	rc, err := client.ImagePull(ctx, image)
 	if err != nil {
 		log.Fatalf("Failed to pull image: %v", err)
 	}
-
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("failed to copy logs: %v", err)
+	}
 	// Create Redis container configuration
 	redis := container.NewConfig("redis-server")
 
@@ -123,15 +125,15 @@ func main() {
 		defer cancel()
 
 		// Stop and remove the container first
-		if err := client.StopContainer(cleanupCtx, redis); err != nil {
+		if err := client.ContainerStop(cleanupCtx, redis); err != nil {
 			log.Printf("Warning: Failed to stop container: %v", err)
 		}
-		if err := client.RemoveContainer(cleanupCtx, redis, true); err != nil {
+		if err := client.ContainerRemove(cleanupCtx, redis, true); err != nil {
 			log.Printf("Warning: Failed to remove container: %v", err)
 		}
 
 		// Then remove the network
-		if err := client.RemoveNetwork(cleanupCtx, net); err != nil {
+		if err := client.NetworkRemove(cleanupCtx, net.Id); err != nil {
 			log.Printf("Warning: Failed to remove network: %v", err)
 		} else {
 			log.Println("Successfully cleaned up network")
@@ -139,11 +141,11 @@ func main() {
 	}()
 
 	// Create and start Redis container
-	if err := client.CreateContainer(ctx, redis); err != nil {
+	if err := client.ContainerCreate(ctx, redis); err != nil {
 		log.Fatalf("Failed to create Redis container: %v", err)
 	}
 
-	if err := client.StartContainer(ctx, redis); err != nil {
+	if err := client.ContainerStart(ctx, redis); err != nil {
 		log.Fatalf("Failed to start Redis container: %v", err)
 	}
 

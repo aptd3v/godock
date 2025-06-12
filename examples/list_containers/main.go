@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"os"
 
 	"github.com/aptd3v/godock/pkg/godock"
 	"github.com/aptd3v/godock/pkg/godock/container"
 	"github.com/aptd3v/godock/pkg/godock/containeroptions"
 	"github.com/aptd3v/godock/pkg/godock/hostoptions"
 	"github.com/aptd3v/godock/pkg/godock/image"
-	"github.com/aptd3v/godock/pkg/godock/listoptions"
 )
 
 func main() {
@@ -19,13 +20,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
-	img, err := image.NewConfig("alpine:latest")
-	if err != nil {
-		log.Fatalf("failed to create image: %v", err)
-	}
-	err = client.PullImage(ctx, img)
+	img := image.NewConfig("alpine")
+	rc, err := client.ImagePull(ctx, img)
 	if err != nil {
 		log.Fatalf("failed to pull image: %v", err)
+	}
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("failed to copy logs: %v", err)
 	}
 	containerConfigs := make([]*container.ContainerConfig, 10)
 	for i := 0; i < 10; i++ {
@@ -40,19 +43,19 @@ func main() {
 		containerConfigs[i] = c
 	}
 	for _, c := range containerConfigs {
-		err = client.CreateContainer(ctx, c)
+		err = client.ContainerCreate(ctx, c)
 		if err != nil {
 			log.Fatalf("failed to create container: %v", err)
 		}
-		err = client.StartContainer(ctx, c)
+		err = client.ContainerStart(ctx, c)
 		if err != nil {
 			log.Fatalf("failed to start container: %v", err)
 		}
 	}
 
 	containerList, err := client.ContainerList(ctx,
-		listoptions.WithFilters("status", "running"),
-		listoptions.WithLimit(5),
+		godock.WithContainerFilter("status", "running"),
+		godock.WithContainerLimit(5),
 	)
 	if err != nil {
 		log.Fatalf("failed to list containers: %v", err)

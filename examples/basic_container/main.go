@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -26,17 +27,19 @@ func main() {
 	}
 
 	// Configure the image to pull
-	img, err := image.NewConfig("nginx:latest")
-	if err != nil {
-		log.Fatalf("Failed to create image config: %v", err)
-	}
+	img := image.NewConfig("nginx")
 
 	// Pull the image
 	fmt.Println("Pulling nginx image...")
-	if err := client.PullImage(ctx, img); err != nil {
+	rc, err := client.ImagePull(ctx, img)
+	if err != nil {
 		log.Fatalf("Failed to pull image: %v", err)
 	}
-
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("Failed to copy logs: %v", err)
+	}
 	// Configure the container
 	container := container.NewConfig("my-nginx")
 	container.SetContainerOptions(
@@ -49,13 +52,13 @@ func main() {
 	)
 	// Create the container
 	fmt.Println("Creating container...")
-	if err := client.CreateContainer(ctx, container); err != nil {
+	if err := client.ContainerCreate(ctx, container); err != nil {
 		log.Fatalf("Failed to create container: %v", err)
 	}
 
 	// Start the container
 	fmt.Println("Starting container...")
-	if err := client.StartContainer(ctx, container); err != nil {
+	if err := client.ContainerStart(ctx, container); err != nil {
 		log.Fatalf("Failed to start container: %v", err)
 	}
 	c := make(chan os.Signal, 1)
@@ -77,13 +80,13 @@ func Cleanup(client *godock.Client, container *container.ContainerConfig) {
 
 	// Stop the container
 	fmt.Println("Stopping container...")
-	if err := client.StopContainer(ctx, container); err != nil {
+	if err := client.ContainerStop(ctx, container); err != nil {
 		log.Fatalf("Failed to stop container: %v", err)
 	}
 
 	// Remove the container
 	fmt.Println("Removing container...")
-	if err := client.RemoveContainer(ctx, container, true); err != nil {
+	if err := client.ContainerRemove(ctx, container, true); err != nil {
 		log.Fatalf("Failed to remove container: %v", err)
 	}
 

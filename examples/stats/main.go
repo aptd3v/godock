@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -17,7 +18,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-
+	fmt.Println("Starting stats example...")
 	// Create a new Docker client
 	client, err := godock.NewClient(ctx)
 	if err != nil {
@@ -25,13 +26,16 @@ func main() {
 	}
 
 	// Configure and pull Alpine image
-	alpineImg, err := image.NewConfig("alpine:latest")
-	if err != nil {
-		log.Fatalf("Failed to create image config: %v", err)
-	}
+	alpineImg := image.NewConfig("alpine")
 
-	if err := client.PullImage(ctx, alpineImg); err != nil {
+	rc, err := client.ImagePull(ctx, alpineImg)
+	if err != nil {
 		log.Fatalf("Failed to pull image: %v", err)
+	}
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("failed to copy logs: %v", err)
 	}
 
 	// Configure the container to do some work
@@ -44,10 +48,10 @@ func main() {
 
 	// Create and start the container
 	fmt.Println("Creating and starting container...")
-	if err := client.CreateContainer(ctx, container); err != nil {
+	if err := client.ContainerCreate(ctx, container); err != nil {
 		log.Fatalf("Failed to create container: %v", err)
 	}
-	if err := client.StartContainer(ctx, container); err != nil {
+	if err := client.ContainerStart(ctx, container); err != nil {
 		log.Fatalf("Failed to start container: %v", err)
 	}
 
@@ -61,7 +65,7 @@ func main() {
 	}()
 
 	// Get stats stream
-	statsCh, errCh := client.ContainerGetStatsChan(ctx, container)
+	statsCh, errCh := client.ContainerStatsChan(ctx, container)
 
 	// Print stats every second
 	fmt.Println("Monitoring container stats (Ctrl+C to exit)...")
@@ -89,7 +93,7 @@ func main() {
 func cleanup(client *godock.Client, container *container.ContainerConfig) {
 	ctx := context.Background()
 	fmt.Println("\nCleaning up...")
-	if err := client.RemoveContainer(ctx, container, true); err != nil {
+	if err := client.ContainerRemove(ctx, container, true); err != nil {
 		log.Printf("Failed to remove container: %v", err)
 	}
 }

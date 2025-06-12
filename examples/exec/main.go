@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -24,19 +25,21 @@ func main() {
 	}
 
 	// Pull Ubuntu image
-	ubuntuImg, err := image.NewConfig("ubuntu:22.04")
+	ubuntuImage := image.NewConfig("ubuntu")
+	fmt.Println(ubuntuImage.Ref)
+	rc, err := client.ImagePull(ctx, ubuntuImage)
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = client.PullImage(ctx, ubuntuImg)
+	_, err = io.Copy(os.Stdout, rc)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Create container config
-	containerConfig := container.NewConfig("exec-example")
-	containerConfig.SetContainerOptions(
-		containeroptions.Image(ubuntuImg),
+	ubuntuContainer := container.NewConfig("exec-example")
+	ubuntuContainer.SetContainerOptions(
+		containeroptions.Image(ubuntuImage),
 		containeroptions.CMD("tail", "-f", "/dev/null"), // Keep container running
 	)
 
@@ -46,18 +49,18 @@ func main() {
 	go func() {
 		<-c
 		fmt.Println("\nCleaning up...")
-		cleanup(client, containerConfig)
+		cleanup(client, ubuntuContainer)
 		os.Exit(0)
 	}()
-	defer cleanup(client, containerConfig)
+	defer cleanup(client, ubuntuContainer)
 
 	// Create and start the container
 	fmt.Println("Creating and starting container...")
-	if err := client.CreateContainer(ctx, containerConfig); err != nil {
+	if err := client.ContainerCreate(ctx, ubuntuContainer); err != nil {
 		log.Fatalf("Failed to create container: %v", err)
 	}
 
-	if err := client.StartContainer(ctx, containerConfig); err != nil {
+	if err := client.ContainerStart(ctx, ubuntuContainer); err != nil {
 		log.Fatalf("Failed to start container: %v", err)
 	}
 
@@ -73,7 +76,7 @@ func main() {
 
 	// Execute command in container
 	fmt.Println("\nStarting interactive shell...")
-	session, err := client.ContainerExecAttachTerminal(ctx, containerConfig, execConfig)
+	session, err := client.ContainerExecAttachTerminal(ctx, ubuntuContainer, execConfig)
 	if err != nil {
 		log.Fatalf("Failed to execute command: %v", err)
 	}
@@ -88,11 +91,11 @@ func main() {
 func cleanup(client *godock.Client, containerConfig *container.ContainerConfig) {
 	ctx := context.Background()
 
-	if err := client.StopContainer(ctx, containerConfig); err != nil {
+	if err := client.ContainerStop(ctx, containerConfig); err != nil {
 		log.Printf("Failed to stop container: %v", err)
 	}
 
-	if err := client.RemoveContainer(ctx, containerConfig, true); err != nil {
+	if err := client.ContainerRemove(ctx, containerConfig, true); err != nil {
 		log.Printf("Failed to remove container: %v", err)
 	}
 

@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
+	"os"
 
 	"github.com/aptd3v/godock/pkg/godock"
 	"github.com/aptd3v/godock/pkg/godock/image"
@@ -22,7 +24,13 @@ func main() {
 	}
 
 	// Build the image
-	if err := client.BuildImage(ctx, img); err != nil {
-		log.Fatal(err)
+	rc, err := client.ImageBuild(ctx, img)
+	if err != nil {
+		log.Fatal(err, "failed to build image")
+	}
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatal(err, "failed to copy logs")
 	}
 }

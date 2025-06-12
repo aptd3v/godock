@@ -58,7 +58,7 @@ func main() {
 		networkoptions.Attachable(),
 	)
 
-	if err := client.CreateNetwork(ctx, net); err != nil {
+	if err := client.NetworkCreate(ctx, net); err != nil {
 		log.Fatalf("Failed to create network: %v", err)
 	}
 
@@ -77,10 +77,7 @@ func main() {
 	containers := make(map[string]*containerConfig)
 
 	// MongoDB Configuration
-	mongoImage, err := image.NewConfig("mongo:latest")
-	if err != nil {
-		log.Fatalf("Failed to create MongoDB image config: %v", err)
-	}
+	mongoImage := image.NewConfig("mongo")
 	mongoDB := container.NewConfig("mongodb")
 	mongoDB.SetContainerOptions(
 		containeroptions.Image(mongoImage),
@@ -109,10 +106,7 @@ func main() {
 	containers["mongodb"] = &containerConfig{container: mongoDB, image: mongoImage}
 
 	// Redis Configuration
-	redisImage, err := image.NewConfig("redis:latest")
-	if err != nil {
-		log.Fatalf("Failed to create Redis image config: %v", err)
-	}
+	redisImage := image.NewConfig("redis")
 	redis := container.NewConfig("redis")
 	redis.SetContainerOptions(
 		containeroptions.Image(redisImage),
@@ -141,10 +135,7 @@ func main() {
 	containers["redis"] = &containerConfig{container: redis, image: redisImage}
 
 	// Nginx Frontend Configuration
-	nginxImage, err := image.NewConfig("nginx:latest")
-	if err != nil {
-		log.Fatalf("Failed to create Nginx image config: %v", err)
-	}
+	nginxImage := image.NewConfig("nginx")
 	nginx := container.NewConfig("frontend")
 	nginx.SetContainerOptions(
 		containeroptions.Image(nginxImage),
@@ -182,17 +173,17 @@ func main() {
 		log.Printf("Setting up %s...", name)
 
 		// Pull image
-		if err := client.PullImage(ctx, cfg.image); err != nil {
+		if _, err := client.ImagePull(ctx, cfg.image); err != nil {
 			log.Fatalf("Failed to pull %s image: %v", name, err)
 		}
 
 		// Create container
-		if err := client.CreateContainer(ctx, cfg.container); err != nil {
+		if err := client.ContainerCreate(ctx, cfg.container); err != nil {
 			log.Fatalf("Failed to create %s container: %v", name, err)
 		}
 
 		// Start container
-		if err := client.StartContainer(ctx, cfg.container); err != nil {
+		if err := client.ContainerStart(ctx, cfg.container); err != nil {
 			log.Fatalf("Failed to start %s container: %v", name, err)
 		}
 
@@ -206,16 +197,16 @@ func main() {
 
 		// Stop and remove containers
 		for name, cfg := range containers {
-			if err := client.StopContainer(cleanupCtx, cfg.container); err != nil {
+			if err := client.ContainerStop(cleanupCtx, cfg.container); err != nil {
 				log.Printf("Warning: Failed to stop %s container: %v", name, err)
 			}
-			if err := client.RemoveContainer(cleanupCtx, cfg.container, true); err != nil {
+			if err := client.ContainerRemove(cleanupCtx, cfg.container, true); err != nil {
 				log.Printf("Warning: Failed to remove %s container: %v", name, err)
 			}
 		}
 
 		// Remove network
-		if err := client.RemoveNetwork(cleanupCtx, net); err != nil {
+		if err := client.NetworkRemove(cleanupCtx, net.Id); err != nil {
 			log.Printf("Warning: Failed to remove network: %v", err)
 		} else {
 			log.Println("Successfully cleaned up network")

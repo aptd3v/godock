@@ -22,7 +22,7 @@ func main() {
 		volumeoptions.AddLabel("backup", "true"),
 	)
 
-	if err := client.CreateVolume(ctx, volume); err != nil {
+	if err := client.VolumeCreate(ctx, volume); err != nil {
 		log.Fatal(err)
 	}
 }

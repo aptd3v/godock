@@ -2,657 +2,256 @@
 
 <div style="display: flex; align-items: center; justify-content: space-between;">
   <div>
-    A declarative, developer-friendly wrapper around Docker's Go SDK.
+    A opinionated declarative, developer-friendly wrapper around Docker's Go SDK.
   </div>
   <img src="gopher.png" alt="Godock Gopher" width="200" style="margin-left: 20px;">
 </div>
 
 
 
-## Why godock?
-[![Go Report Card](https://goreportcard.com/badge/github.com/aptd3v/godock)](https://goreportcard.com/report/github.com/aptd3v/godock)
+  [![Go Report Card](https://goreportcard.com/badge/github.com/aptd3v/godock)](https://goreportcard.com/report/github.com/aptd3v/godock)
+  [![GoDoc](https://godoc.org/github.com/aptd3v/godock?status.svg)](https://godoc.org/github.com/aptd3v/godock)
+  [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-godock was created to make Docker container management in Go more intuitive, type-safe, and maintainable. Here's why you might want to use it:
+## Overview
 
-### 🛡️ Type Safety First
-```go
-// godock enforces type safety through dedicated option functions
-redis.SetContainerOptions(
-	containeroptions.Image(redisImage),      // Type-safe image configuration
-	containeroptions.Expose("6379"), 
-	containeroptions.Label("env", "prod"),   // Structured labels
-)
+godock simplifies Docker operations in Go by providing:
 
-// vs Docker SDK's map-based approach
-container := &container.Config{
-	Image: "redis",                  // String that could be invalid
-	ExposedPorts: map[string]struct{}{
-		"6379/tcp": {},             // Easy to make typos
-	},
-	Labels: map[string]string{...}, // No structure enforcement
-}
-```
-
-### 🎨 Clean, Fluent API
-- Function Options Pattern for intuitive configuration
-- Clear separation between container, host, and network options
-- Self-documenting function names
-- IDE-friendly with great autocompletion
-
-### 🏗️ Structured Configuration
-```go
-// Clear separation of concerns
-container.SetContainerOptions(...)  // Container-specific settings
-container.SetHostOptions(...)       // Host-specific settings
-container.SetNetworkOptions(...)    // Network-specific settings
-```
-
-### 🔒 Error Prevention
-- Catch configuration errors at compile time
-- Validate settings before they reach Docker
-- Clear error messages for debugging
-- Prevent common Docker configuration mistakes
-
-### 📦 Resource Management
-```go
-// Clear, readable resource specifications
-hostoptions.Memory(1*1024*1024*1024)  // Clearly 1GB
-hostoptions.CPUQuota(2)               // 2 CPU cores
-hostoptions.RestartAlways()           // Clear policy names
-```
-
-### 🌐 Network Simplification
-```go
-// Easy network configuration and service discovery
-container.SetNetworkOptions(
-	networkoptions.Endpoint("my-net", endpoint),
-	networkoptions.Aliases("service-name"),
-)
-```
-
-### 💡 Developer Experience
-- Reduce boilerplate code
-- Make container configuration maintainable
-- Prevent common mistakes
-- Great for applications managing containers programmatically
-
-### 📚 Examples 
-Check out our examples directory for usage:
-- Single container setups
-- Multi-container applications
-- Network configuration
-- Volume management
-- Health checks
-- And More
-
-## Features
-
-- 🐳 **Container Management**: Create, start, stop, and manage containers with ease
-- 🏗️ **Image Operations**: Pull and build Docker images
-- 🌐 **Network Management**: Create and configure Docker networks
-- 💾 **Volume Management**: Handle Docker volumes
-- 📝 **Declarative Configuration**: Use functional options for clear and type-safe configuration
-- 🔍 **Built-in Logging**: Configurable output writers for images, stats, and logs
+- 🎨 **Clean API** - Intuitive configuration with clear function names
+- 🏗️ **Resource Management** - Simple container, network, and volume operations
+- 🔍 **Error Handling** - Detailed error types for better debugging
+- 📦 **Composable Options** - Mix and match configuration options easily
 
 ## Installation
 
-To use godock in your project, you can install it using one of the following methods:
-
-### Using go get
+Using `go get` (outside a module):
 ```bash
 go get github.com/aptd3v/godock@latest
 ```
 
 
 ### Requirements
-- Go 1.23.0 or later
-- Docker Engine running on your system
+- Go 1.21.0 or later
+- Docker Engine API version 1.41 or later
+- Docker Engine running locally
 
-## Development
+## Usage Examples
 
-### Project Structure
+### Container Management
+```go
+package main
+
+import (
+    "context"
+    "github.com/aptd3v/godock/pkg/godock"
+    "github.com/aptd3v/godock/pkg/godock/container"
+    "github.com/aptd3v/godock/pkg/godock/containeroptions"
+    "github.com/aptd3v/godock/pkg/godock/hostoptions"
+)
+
+func main() {
+    ctx := context.Background()
+    client, _ := godock.NewClient(ctx)
+
+    container := container.NewConfig("app")
+    container.SetContainerOptions(
+        containeroptions.Image("app:latest"),
+        containeroptions.Expose("8080"),
+        containeroptions.Env("APP_ENV", "prod"),
+    )
+    container.SetHostOptions(
+        hostoptions.Memory(1*1024*1024*1024),
+        hostoptions.CPUQuota(2),
+        hostoptions.RestartAlways(),
+    )
+
+    client.ContainerCreate(ctx, container)
+    client.ContainerStart(ctx, container)
+}
+```
+
+### Network Management
+```go
+// Create a network
+network := network.NewConfig("app-net")
+network.SetOptions(
+    networkoptions.SetDriver("bridge"),
+    networkoptions.SetSubnet("172.20.0.0/16"),
+    networkoptions.SetGateway("172.20.0.1"),
+)
+
+// Configure endpoint settings
+endpoint := endpointoptions.NewConfig()
+endpoint.SetEndpointSetting(
+    endpointoptions.IPv4Address("172.20.0.2"),
+    endpointoptions.IPv4Gateway("172.20.0.1"),
+    endpointoptions.IPv4PrefixLen(16),
+    endpointoptions.Aliases("api-service", "web-backend"),
+    endpointoptions.Links("redis:cache"),
+)
+
+// Attach container to network
+container.SetNetworkOptions(
+    networkoptions.Endpoint("app-net", endpoint),
+)
+```
+
+### Volume Management
+```go
+volume := volume.NewConfig("data")
+volume.SetOptions(
+    volumeoptions.SetDriver(volumeoptions.LocalDriver),
+    volumeoptions.AddLabel("env", "prod"),
+)
+
+container.SetHostOptions(
+    hostoptions.Mount(hostoptions.MountType("volume"), "data", "/app/data", false),
+)
+```
+
+### Error Handling
+godock provides rich error types and helper functions for robust error handling:
+
+```go
+import (
+    "github.com/aptd3v/godock/pkg/godock"
+    "github.com/aptd3v/godock/pkg/godock/errors"
+)
+
+// Create and start a container
+err := client.ContainerCreate(ctx, config)
+if err != nil {
+    // Check error types
+    switch {
+    case errors.IsNotFound(err):
+        // Handle missing image or resource
+        var nfe *errors.ResourceNotFoundError
+        if errors.As(err, &nfe) {
+            log.Printf("Resource %s with ID %s not found", 
+                nfe.ResourceType, nfe.ID)
+        }
+        
+    case errors.IsAlreadyExists(err):
+        // Handle duplicate resources (e.g., container name)
+        var ee *errors.ResourceExistsError
+        if errors.As(err, &ee) {
+            log.Printf("Resource %s with ID %s already exists", 
+                ee.ResourceType, ee.ID)
+        }
+    }
+    return
+}
+
+// Start the container
+err = client.ContainerStart(ctx, config)
+if err != nil {
+    switch {
+    case errors.IsAlreadyExists(err):
+        // Handle resource conflicts (e.g., port already in use)
+        var ee *errors.ResourceExistsError
+        if errors.As(err, &ee) {
+            log.Printf("Resource %s with ID %s already exists", 
+                ee.ResourceType, ee.ID)
+        }
+        
+    case errors.IsInvalidConfig(err):
+        // Handle configuration errors
+        var ve *errors.ValidationError
+        if errors.As(err, &ve) {
+            log.Printf("Invalid configuration for %s: %s", 
+                ve.Field, ve.Message)
+        }
+        
+    case errors.IsDaemonNotRunning(err):
+        // Handle Docker daemon issues
+        log.Print("Docker daemon is not running")
+        
+    case errors.IsTimeout(err):
+        // Handle timeout errors
+        log.Print("Operation timed out")
+        
+    default:
+        // Handle other error types
+        switch e := err.(type) {
+        case *errors.ContainerError:
+            log.Printf("Container %s: %s failed: %s", 
+                e.ID, e.Op, e.Message)
+        case *errors.NetworkError:
+            log.Printf("Network %s: %s failed: %s", 
+                e.ID, e.Op, e.Message)
+        case *errors.VolumeError:
+            log.Printf("Volume %s: %s failed: %s", 
+                e.Name, e.Op, e.Message)
+        }
+    }
+}
+```
+
+# Key features:
+- Type-safe error checking with `errors.Is` and `errors.As`
+- Resource-specific error types (Container, Network, Volume)
+- Operation-specific error handling (Create vs Start)
+- Detailed error context (resource IDs, operation names, messages)
+- Common error categories:
+  - `NotFound`: Missing images, containers, or other resources
+  - `AlreadyExists`: Duplicate container names (during create) or ports (during start)
+  - `ValidationError`: Invalid configuration or parameters
+  - `ContainerError`: General container operation failures
+  - `NetworkError`: Network operation failures
+  - `VolumeError`: Volume operation failures
+- Operation errors:
+  - `Timeout`: Operation exceeded time limit
+  - `Canceled`: Operation was canceled
+  - `DaemonNotRunning`: Docker daemon unavailable
+
+## Project Structure
 ```
 godock/
-├── examples/              # Example applications and use cases
-│   ├──*examples/
+├── examples/                # Example applications
+│   └── *examples/          # Various implementations
 ├── pkg/
-│   └── godock/           # Main package
-│       ├── container/    # Container management
-│       ├── image/        # Image operations
-│       ├── network/      # Network management
-│       ├── volume/       # Volume management
-│       └── *options/     # Type-safe option packages
-├── CONTRIBUTING.md       # Contribution guidelines
-├── LICENSE              # MIT License
-└── README.md           # This file
+│   └── godock/            # Main package
+│       ├── client.go      # Core client
+│       ├── container/     # Container operations
+│       ├── errors/        # Error handling
+│       ├── exec/          # Exec operations
+│       ├── image/         # Image operations
+│       ├── network/       # Network operations
+│       ├── networkoptions/# Network options
+│       ├── terminal/      # Terminal utilities
+│       └── volume/        # Volume operations
+├── CONTRIBUTING.md        # Contribution guide
+├── LICENSE               # MIT License
+└── README.md            # Documentation
 ```
 
-### Development Setup
+## Documentation
+- [GoDoc Reference](https://godoc.org/github.com/aptd3v/godock)
+- [Examples Directory](./examples)
+- [Contributing Guide](CONTRIBUTING.md)
 
-1. **Prerequisites**
-   - Go 1.21 or later
-   - Docker Engine
-   - Git
-
-2. **Clone and Setup**
-   ```bash
-   # Clone the repository
-   git clone https://github.com/YOUR-USERNAME/godock.git
-   cd godock
-
-   # Install dependencies
-   go mod download
-   ```
-
-3. **Verify Setup**
-   ```bash
-   # Run tests
-   go test ./...
-   ```
-
-### Testing
-
-godock uses a comprehensive testing suite including both unit and integration tests:
-
-1. **Run Unit Tests**
-   ```bash
-   go test ./...
-   ```
-
-2. **Run Integration Tests** (requires Docker)
-   ```bash
-   go test ./... -tags=integration
-   ```
-
-3. **Test Coverage**
-   ```bash
-   go test -coverprofile=coverage.out ./...
-   go tool cover -html=coverage.out
-   ```
-
-4. **Run Specific Tests**
-   ```bash
-   # Test a specific package
-   go test ./pkg/godock/container/...
-
-   # Run tests with verbose output
-   go test -v ./...
-   ```
-
-### Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details on:
-- How to submit changes
-- Coding standards
-- Testing requirements
-- Pull request process
+## Support
+- GitHub Issues: Bug reports and features
+- Discussions: Questions and ideas
+- Pull Requests: Contributions welcome
 
 ## Contributors
 
-Thank you to all our contributors who help make godock better! 
-
-<a href="https://github.com/aptd3v/godock/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=aptd3v/godock" />
-</a>
-
-## Quick Start
-
-Here's a simple example that pulls an Nginx image and runs it with port mapping:
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
-
-	"github.com/aptd3v/godock/pkg/godock"
-	"github.com/aptd3v/godock/pkg/godock/container"
-	"github.com/aptd3v/godock/pkg/godock/containeroptions"
-	"github.com/aptd3v/godock/pkg/godock/hostoptions"
-	"github.com/aptd3v/godock/pkg/godock/image"
-)
-
-func main() {
-	ctx := context.Background()
-
-	// Create a new Docker client
-	client, err := godock.NewClient(ctx)
-	if err != nil {
-		log.Fatalf("Failed to create Docker client: %v", err)
-	}
-
-	// Configure the image to pull
-	img, err := image.NewConfig("nginx:latest")
-	if err != nil {
-		log.Fatalf("Failed to create image configuration %v", err)
-	}
-	// Pull the image
-	fmt.Println("Pulling nginx image...")
-	if err := client.PullImage(ctx, img); err != nil {
-		log.Fatalf("Failed to pull image: %v", err)
-	}
-
-	// Configure the container
-	container := container.NewConfig("my-nginx")
-	container.SetContainerOptions(
-		containeroptions.Image(img),
-		containeroptions.Expose("8080"),
-		containeroptions.Env("NGINX_PORT", "8080"),
-	)
-	container.SetHostOptions(
-		hostoptions.PortBindings("0.0.0.0", "8080", "8080"),
-	)
-	// Create the container
-	fmt.Println("Creating container...")
-	if err := client.CreateContainer(ctx, container); err != nil {
-		log.Fatalf("Failed to create container: %v", err)
-	}
-
-	// Start the container
-	fmt.Println("Starting container...")
-	if err := client.StartContainer(ctx, container); err != nil {
-		log.Fatalf("Failed to start container: %v", err)
-	}
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		Cleanup(client, container)
-		os.Exit(1)
-	}()
-	fmt.Println("Container is running! Press Ctrl+C to stop...")
-
-	// Wait for a while to see the container running
-	time.Sleep(10 * time.Second)
-	Cleanup(client, container)
-}
-
-func Cleanup(client *godock.Client, container *container.ContainerConfig) {
-	ctx := context.Background()
-
-	// Stop the container
-	fmt.Println("Stopping container...")
-	if err := client.StopContainer(ctx, container); err != nil {
-		log.Fatalf("Failed to stop container: %v", err)
-	}
-
-	// Remove the container
-	fmt.Println("Removing container...")
-	if err := client.RemoveContainer(ctx, container, true); err != nil {
-		log.Fatalf("Failed to remove container: %v", err)
-	}
-
-	fmt.Println("Example completed successfully!")
-}
-
-```
-
-## Examples
-
-### Creating a Network
-
-```go
-package main
-
-import (
-	"context"
-	"log"
-
-	"github.com/aptd3v/godock/pkg/godock"
-	"github.com/aptd3v/godock/pkg/godock/network"
-	"github.com/aptd3v/godock/pkg/godock/networkoptions"
-)
-
-func main() {
-	ctx := context.Background()
-	client, err := godock.NewClient(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	network := network.NewConfig("my-network")
-	network.SetOptions(
-		networkoptions.Driver("bridge"),
-		networkoptions.IPAMDriver("default"),
-		networkoptions.IPAMConfig("172.20.0.0/16", "", "172.20.0.1"),
-		networkoptions.Labels(map[string]string{
-			"env": "prod",
-			"project": "myapp",
-		}),
-		networkoptions.EnableIPV6(true),
-		networkoptions.Attachable(),
-	)
-
-	if err := client.CreateNetwork(ctx, network); err != nil {
-		log.Fatal(err)
-	}
-}
-
-```
-
-### Working with Volumes
-
-```go
-package main
-
-import (
-	"context"
-	"log"
-	
-	"github.com/aptd3v/godock/pkg/godock"
-	"github.com/aptd3v/godock/pkg/godock/volume"
-	"github.com/aptd3v/godock/pkg/godock/volumeoptions"
-)
-
-func main() {
-	ctx := context.Background()
-	client, err := godock.NewClient(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-	
-	volume := volume.NewConfig("my-volume")
-	volume.SetOptions(
-		// Set the volume driver (with type safety)
-		volumeoptions.SetDriver(volumeoptions.NFSDriver),
-		
-		// Add driver options individually
-		volumeoptions.AddDriverOpt("server", "10.0.0.1"),
-		volumeoptions.AddDriverOpt("share", "/exports"),
-		volumeoptions.AddDriverOpt("security", "sys"),
-		
-		// Add labels individually
-		volumeoptions.AddLabel("environment", "production"),
-		volumeoptions.AddLabel("project", "web-app"),
-		volumeoptions.AddLabel("team", "backend"),
-	)
-	
-	if err := client.CreateVolume(ctx, volume); err != nil {
-		log.Fatal(err)
-	}
-}
-
-// --- Advanced Volume Configuration ---
-
-// Cluster Volume with Access Control
-volume.SetOptions(
-	volumeoptions.SetDriver(volumeoptions.LocalDriver),
-	volumeoptions.SetClusterSpec(
-		"backend-group",
-		volumeoptions.SingleNode,
-		volumeoptions.ReadWrite,
-	),
-	volumeoptions.SetCapacityRange(
-		100*1024*1024,    // Required: 100MB
-		1024*1024*1024,   // Limit: 1GB
-	),
-	volumeoptions.SetAvailability(volumeoptions.AvailabilityActive),
-	
-	// Add secrets individually
-	volumeoptions.AddSecret("encryption-key", "my-secret-id"),
-	volumeoptions.AddSecret("auth-token", "my-auth-secret"),
-)
-```
-
-### Building an Image
-
-```go
-package main
-
-import (
-	"context"
-	"log"
-
-	"github.com/aptd3v/godock/pkg/godock"
-	"github.com/aptd3v/godock/pkg/godock/image"
-)
-
-func main() {
-	ctx := context.Background()
-	client, err := godock.NewClient(ctx)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Create image config from Dockerfile in current directory
-	img, err := image.NewImageFromSrc("./examples/basic_build_image")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Build the image
-	if err := client.BuildImage(ctx, img); err != nil {
-		log.Fatal(err)
-	}
-}
-
-```
-
-## Advanced Usage
-
-### Custom Output Writers
-
-You can customize where the output from Docker operations is written:
-
-```go
-package main
-
-import (
-	"os"
-	"github.com/aptd3v/godock/pkg/godock"
-)
-
-func main() {
-	client, _ := godock.NewClient(context.Background())
-	
-	// Write image pull/build output to a file
-	f, _ := os.Create("build.log")
-	client.SetImageResponeWriter(f)
-	
-	// Write container stats to a custom writer
-	client.SetStatsResponeWriter(customWriter)
-	
-	// Write container logs to stdout
-	client.SetLogResponseWriter(os.Stdout)
-}
-```
-
-
-
-## 🔄 godock vs Docker SDK
-
-Here's how godock simplifies Docker operations compared to the raw Docker SDK:
-
-```go
-// --- Creating and Starting a Container ---
-
-// Docker SDK
-container, err := client.ContainerCreate(ctx,
-    &container.Config{
-        Image: "nginx",
-        ExposedPorts: nat.PortSet{
-            "80/tcp": struct{}{},
-        },
-        Labels: map[string]string{"env": "prod"},
-    },
-    &container.HostConfig{
-        PortBindings: nat.PortMap{
-            "80/tcp": []nat.PortBinding{
-                {
-                    HostIP:   "0.0.0.0",
-                    HostPort: "8080",
-                },
-            },
-        },
-        RestartPolicy: container.RestartPolicy{
-            Name: "always",
-        },
-        Resources: container.Resources{
-            Memory: 256 * 1024 * 1024,
-        },
-    },
-    &network.NetworkingConfig{
-        EndpointsConfig: map[string]*network.EndpointSettings{
-            "my-net": {
-                Aliases: []string{"web-server"},
-            },
-        },
-    },
-    "my-nginx",
-)
-
-// godock
-nginx := container.NewConfig("my-nginx")
-nginx.SetContainerOptions(
-    containeroptions.Image(nginxImage),
-    containeroptions.Expose("80"),
-    containeroptions.Label("env", "prod"),
-)
-nginx.SetHostOptions(
-    hostoptions.PortBindings("0.0.0.0", "8080", "80"),
-    hostoptions.RestartAlways(),
-    hostoptions.Memory(256*1024*1024),
-)
-nginx.SetNetworkOptions(
-    networkoptions.Endpoint("my-net", endpoint),
-    networkoptions.Aliases("web-server"),
-)
-
-// --- Creating a Network ---
-
-// Docker SDK
-_, err := client.NetworkCreate(ctx,
-    "my-network",
-    types.NetworkCreate{
-        Driver: "bridge",
-        IPAM: &network.IPAM{
-            Driver: "default",
-            Config: []network.IPAMConfig{
-                {
-                    Subnet:  "172.20.0.0/16",
-                    Gateway: "172.20.0.1",
-                },
-            },
-        },
-        Labels: map[string]string{
-            "env": "prod",
-            "project": "myapp",
-        },
-        EnableIPv6: true,
-        Internal: false,
-        Attachable: true,
-    },
-)
-
-// godock
-net := network.NewConfig("my-network")
-net.SetOptions(
-    networkoptions.Driver("bridge"),
-    networkoptions.IPAMDriver("default"),
-    networkoptions.IPAMConfig("172.20.0.0/16", "", "172.20.0.1"),
-    networkoptions.Label("env", "prod")
-    networkoptions.Label("project", "myapp")
-    networkoptions.EnableIPV6(true),
-    networkoptions.Attachable(),
-)
-
-// --- Network Endpoint Configuration ---
-
-// Docker SDK
-container, err := client.ContainerCreate(ctx,
-    // ... container config ...
-    &network.NetworkingConfig{
-        EndpointsConfig: map[string]*network.EndpointSettings{
-            "my-net": {
-                Aliases: []string{"web-server"},
-            },
-        },
-    },
-    // ... other options ...
-)
-
-// godock
-endpoint := endpointoptions.NewConfig()
-endpoint.SetEndpointSetting(
-    endpointoptions.Aliases("web-server"),
-)
-container.SetNetworkOptions(
-    networkoptions.Endpoint("my-net", endpoint),
-)
-
-// --- Volume Management ---
-
-// Docker SDK
-_, err := client.VolumeCreate(ctx,
-    volume.CreateOptions{
-        Name: "my-volume",
-        Driver: "nfs",
-        DriverOpts: map[string]string{
-            "server": "10.0.0.1",
-            "share": "/exports",
-            "security": "sys",
-        },
-        Labels: map[string]string{
-            "environment": "production",
-            "project": "web-app",
-            "team": "backend",
-        },
-    },
-)
-
-// godock
-vol := volume.NewConfig("my-volume")
-vol.SetOptions(
-    // Set the volume driver (with type safety)
-    volumeoptions.SetDriver(volumeoptions.NFSDriver),
-    
-    // Add driver options individually
-    volumeoptions.AddDriverOpt("server", "10.0.0.1"),
-    volumeoptions.AddDriverOpt("share", "/exports"),
-    volumeoptions.AddDriverOpt("security", "sys"),
-    
-    // Add labels individually
-    volumeoptions.AddLabel("environment", "production"),
-    volumeoptions.AddLabel("project", "web-app"),
-    volumeoptions.AddLabel("team", "backend"),
-)
-
-// --- Advanced Volume Configuration ---
-
-// Cluster Volume with Access Control
-vol.SetOptions(
-    volumeoptions.SetDriver(volumeoptions.LocalDriver),
-    volumeoptions.SetClusterSpec(
-        "backend-group",
-        volumeoptions.SingleNode,
-        volumeoptions.ReadWrite,
-    ),
-    volumeoptions.SetCapacityRange(
-        100*1024*1024,    // Required: 100MB
-        1024*1024*1024,   // Limit: 1GB
-    ),
-    volumeoptions.SetAvailability(volumeoptions.AvailabilityActive),
-    
-    // Add secrets individually
-    volumeoptions.AddSecret("encryption-key", "my-secret-id"),
-    volumeoptions.AddSecret("auth-token", "my-auth-secret"),
-)
-```
-## Key Differences:
-- 📝 **Readability**: Clear, fluent interface vs nested structs and maps
-- 🔧 **Maintainability**: Options are grouped logically and self-documenting
-- 🚫 **Error Prevention**: Invalid configurations are caught early
-- 🎨 **IDE Support**: Better autocompletion and documentation
-- 🏗️ **Composability**: Easy to build complex configurations from simple parts
-
-
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+Thank you to all the contributors who have helped improve godock! 
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/aptd3v">
+        <img src="https://github.com/aptd3v.png" width="100px;" alt="aptd3v"/><br />
+        <sub><b>aptd3v</b></sub>
+      </a><br />
+      <sub>Project Creator</sub>
+    </td>
+  </tr>
+</table>
+
+Want to contribute? Check out our [Contributing Guide](CONTRIBUTING.md) to get started!
+
+## License
+godock is released under the MIT License. See [LICENSE](LICENSE) for details.

@@ -3,16 +3,18 @@ package godock
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/aptd3v/godock/pkg/godock/commitoptions"
 	"github.com/aptd3v/godock/pkg/godock/container"
+	"github.com/aptd3v/godock/pkg/godock/errors"
 	"github.com/aptd3v/godock/pkg/godock/exec"
 	"github.com/aptd3v/godock/pkg/godock/image"
 	"github.com/aptd3v/godock/pkg/godock/network"
+	"github.com/aptd3v/godock/pkg/godock/networkoptions/endpointoptions"
 	"github.com/aptd3v/godock/pkg/godock/terminal"
 	"github.com/aptd3v/godock/pkg/godock/volume"
 	"github.com/docker/docker/api/types"
@@ -20,32 +22,23 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	imageType "github.com/docker/docker/api/types/image"
 	dockerNetwork "github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/registry"
+	volumeType "github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 )
 
-// ImageProgress represents the JSON output from Docker image operations
-type ImageProgress struct {
-	Stream   string `json:"stream,omitempty"`
-	Status   string `json:"status,omitempty"`
-	Progress string `json:"progress,omitempty"`
-	Aux      struct {
-		ID string `json:"id,omitempty"`
-	} `json:"aux,omitempty"`
-	ErrorDetail struct {
-		Message string `json:"message,omitempty"`
-	} `json:"errorDetail,omitempty"`
-	Error string `json:"error,omitempty"`
-}
-
 type Client struct {
-	wrapped        *client.Client
-	imageResWriter io.Writer
-	statsResWriter io.Writer
-	logResWriter   io.Writer
+	wrapped *client.Client
 }
 
-func (c *Client) CreateContainer(ctx context.Context, containerConfig *container.ContainerConfig) error {
+func (c *Client) ContainerCreate(ctx context.Context, containerConfig *container.ContainerConfig) error {
+	if containerConfig == nil {
+		return &errors.ValidationError{
+			Field:   "containerConfig",
+			Message: "container config cannot be nil",
+		}
+	}
+
 	res, err := c.wrapped.ContainerCreate(
 		ctx,
 		containerConfig.Options,
@@ -55,34 +48,75 @@ func (c *Client) CreateContainer(ctx context.Context, containerConfig *container
 		containerConfig.Name,
 	)
 	if err != nil {
-		return err
+		if client.IsErrNotFound(err) {
+			return &errors.ResourceNotFoundError{
+				ResourceType: "image",
+				ID:           containerConfig.Options.Image,
+			}
+		}
+		// Check for conflicts
+		if strings.Contains(err.Error(), "Conflict") {
+			if strings.Contains(err.Error(), "is already in use") {
+				return &errors.ResourceExistsError{
+					ResourceType: "container",
+					ID:           containerConfig.Name,
+				}
+			}
+		}
+		return &errors.ContainerError{
+			ID:      containerConfig.Name,
+			Op:      "create",
+			Message: err.Error(),
+		}
 	}
 
 	containerConfig.Id = res.ID
-
 	return nil
 }
-func (c *Client) StartContainer(ctx context.Context, containerConfig *container.ContainerConfig) error {
-	return c.wrapped.ContainerStart(ctx, containerConfig.Id, containerType.StartOptions{})
+
+func (c *Client) ContainerStart(ctx context.Context, containerConfig *container.ContainerConfig) error {
+	if containerConfig == nil || containerConfig.Id == "" {
+		return &errors.ValidationError{
+			Field:   "containerConfig",
+			Message: "container config or ID cannot be empty",
+		}
+	}
+
+	err := c.wrapped.ContainerStart(ctx, containerConfig.Id, containerType.StartOptions{})
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			return &errors.ResourceNotFoundError{
+				ResourceType: "container",
+				ID:           containerConfig.Name,
+			}
+		}
+		if strings.Contains(err.Error(), "port is already allocated") {
+			return &errors.ResourceExistsError{
+				ResourceType: "port",
+				ID:           containerConfig.Name,
+			}
+		}
+		return &errors.ContainerError{
+			ID:      containerConfig.Name,
+			Op:      "start",
+			Message: err.Error(),
+		}
+	}
+	return nil
 }
 
-// GetContainerStats gets stats and is synchronus
+// ContainerStats gets stats and is synchronus
 // This is a blocking call and will return when the container is stopped or the context is cancelled
-func (c *Client) GetContainerStats(ctx context.Context, containerConfig *container.ContainerConfig) error {
+func (c *Client) ContainerStats(ctx context.Context, containerConfig *container.ContainerConfig) (io.ReadCloser, error) {
 	res, err := c.wrapped.ContainerStats(ctx, containerConfig.Id, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer res.Body.Close()
-	if _, err := io.Copy(c.statsResWriter, res.Body); err != nil {
-		return err
-	}
-	return nil
+	return res.Body, nil
 }
 
-// GetContainerLogs returns a ReadCloser for container logs. If a custom log writer is configured,
-// logs will also be written to it asynchronously. Caller is responsible for closing the returned reader.
-func (c *Client) GetContainerLogs(ctx context.Context, containerConfig *container.ContainerConfig) (io.ReadCloser, error) {
+// ContainerLogs returns a ReadCloser for container logs. Caller is responsible for closing the returned reader.
+func (c *Client) ContainerLogs(ctx context.Context, containerConfig *container.ContainerConfig) (io.ReadCloser, error) {
 	rc, err := c.wrapped.ContainerLogs(ctx, containerConfig.Id, containerType.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -92,41 +126,29 @@ func (c *Client) GetContainerLogs(ctx context.Context, containerConfig *containe
 		return nil, err
 	}
 
-	// Create a pipe to tee the output
-	pr, pw := io.Pipe()
-
-	// Start copying in background
-	go func() {
-		defer func() {
-			rc.Close()
-			pw.Close()
-		}()
-
-		_, err := io.Copy(io.MultiWriter(pw, c.logResWriter), rc)
-		if err != nil && err != io.ErrClosedPipe {
-			fmt.Printf("Error copying container logs: %v\n", err)
-		}
-	}()
-
-	return pr, nil
+	return rc, nil
 }
-func (c *Client) RemoveContainer(ctx context.Context, containerConfig *container.ContainerConfig, force bool) error {
+
+func (c *Client) ContainerRemove(ctx context.Context, containerConfig *container.ContainerConfig, force bool) error {
 	return c.wrapped.ContainerRemove(ctx, containerConfig.Id, containerType.RemoveOptions{
 		RemoveVolumes: force,
 		Force:         force,
 	})
 }
-func (c *Client) UnpauseContainer(ctx context.Context, containerConfig *container.ContainerConfig) error {
+
+func (c *Client) ContainerUnpause(ctx context.Context, containerConfig *container.ContainerConfig) error {
 	return c.wrapped.ContainerUnpause(ctx, containerConfig.Id)
 }
-func (c *Client) PauseContainer(ctx context.Context, containerConfig *container.ContainerConfig) error {
+
+func (c *Client) ContainerPause(ctx context.Context, containerConfig *container.ContainerConfig) error {
 	return c.wrapped.ContainerPause(ctx, containerConfig.Id)
 }
-func (c *Client) RestartContainer(ctx context.Context, containerConfig *container.ContainerConfig) error {
+
+func (c *Client) ContainerRestart(ctx context.Context, containerConfig *container.ContainerConfig) error {
 	return c.wrapped.ContainerRestart(ctx, containerConfig.Id, containerType.StopOptions{})
 }
 
-func (c *Client) StopContainer(ctx context.Context, containerConfig *container.ContainerConfig) error {
+func (c *Client) ContainerStop(ctx context.Context, containerConfig *container.ContainerConfig) error {
 	return c.wrapped.ContainerStop(ctx, containerConfig.Id, containerType.StopOptions{})
 }
 
@@ -135,79 +157,97 @@ func (c *Client) ContainerWait(ctx context.Context, containerConfig *container.C
 	return c.wrapped.ContainerWait(ctx, containerConfig.Id, containerType.WaitConditionNotRunning)
 }
 
-func (c *Client) CreateNetwork(ctx context.Context, networkConfig *network.NetworkConfig) error {
+func (c *Client) NetworkCreate(ctx context.Context, networkConfig *network.NetworkConfig) error {
+	if networkConfig == nil || networkConfig.Name == "" {
+		return &errors.ValidationError{
+			Field:   "networkConfig",
+			Message: "network config or name cannot be empty",
+		}
+	}
+
 	res, err := c.wrapped.NetworkCreate(ctx, networkConfig.Name, *networkConfig.Options)
 	if err != nil {
-		return err
+		if client.IsErrNotFound(err) {
+			return &errors.ResourceNotFoundError{
+				ResourceType: "network driver",
+				ID:           networkConfig.Options.Driver,
+			}
+		}
+		return &errors.NetworkError{
+			ID:      networkConfig.Name,
+			Op:      "create",
+			Message: err.Error(),
+		}
 	}
 	networkConfig.Id = res.ID
 	return nil
 }
 
-func (c *Client) CreateVolume(ctx context.Context, volumeConfig *volume.VolumeConfig) error {
-	_, err := c.wrapped.VolumeCreate(ctx, *volumeConfig.Options)
-	if err != nil {
-		return err
+func (c *Client) VolumeCreate(ctx context.Context, volumeConfig *volume.VolumeConfig) error {
+	if volumeConfig == nil || volumeConfig.Options == nil {
+		return &errors.ValidationError{
+			Field:   "volumeConfig",
+			Message: "volume config cannot be nil",
+		}
 	}
+
+	fmt.Printf("Creating volume with options: %+v\n", volumeConfig.Options)
+	fmt.Printf("Volume labels: %+v\n", volumeConfig.Options.Labels)
+	vol, err := c.wrapped.VolumeCreate(ctx, *volumeConfig.Options)
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			return &errors.ResourceNotFoundError{
+				ResourceType: "volume driver",
+				ID:           volumeConfig.Options.Driver,
+			}
+		}
+		return &errors.VolumeError{
+			Name:    volumeConfig.Options.Name,
+			Op:      "create",
+			Message: err.Error(),
+		}
+	}
+	fmt.Printf("Created volume: %+v\n", vol)
 	return nil
 }
 
-// SetImageResponeWriter sets the image response writer for Docker's API.
-// If this is not set, the client wrapper will default to stdout.
-func (c *Client) SetImageResponeWriter(dst io.Writer) {
-	c.imageResWriter = dst
-}
+// PullImage requests the docker host to pull an image from a remote registry.
+// It executes the privileged function if the operation is unauthorized and it tries one more time.
+// It's up to the caller to handle the io.ReadCloser and close it properly.
+func (c *Client) ImagePull(ctx context.Context, imageConfig *image.ImageConfig) (io.ReadCloser, error) {
+	if imageConfig == nil || imageConfig.Ref == "" {
+		return nil, &errors.ValidationError{
+			Field:   "imageConfig",
+			Message: "image config or reference cannot be empty",
+		}
+	}
 
-// This sets the stats response writer for Docker's API.
-// If this is not set, the client wrapper will default to StatsFormatter.
-func (c *Client) SetStatsResponeWriter(dst io.Writer) {
-	c.statsResWriter = dst
-}
-
-// This sets the log output response writer for Docker's API.
-// If this is not set, the client wrapper will default to stdout.
-func (c *Client) SetLogResponseWriter(dst io.Writer) {
-	c.logResWriter = stdcopy.NewStdWriter(dst, stdcopy.Stdout)
-}
-
-func (c *Client) PullImage(ctx context.Context, imageConfig *image.ImageConfig) error {
 	rc, err := c.wrapped.ImagePull(ctx, imageConfig.Ref, *imageConfig.PullOptions)
 	if err != nil {
-		return err
-	}
-	defer rc.Close()
-
-	decoder := json.NewDecoder(rc)
-	for {
-		var progress ImageProgress
-		if err := decoder.Decode(&progress); err != nil {
-			if err == io.EOF {
-				break
+		if client.IsErrNotFound(err) {
+			return nil, &errors.ResourceNotFoundError{
+				ResourceType: "image",
+				ID:           imageConfig.Ref,
 			}
-			return err
 		}
-		if progress.Error != "" {
-			return fmt.Errorf("pull error: %s", progress.Error)
-		}
-		if progress.Status != "" {
-			fmt.Fprintf(c.imageResWriter, "%s\n", progress.Status)
+		return nil, &errors.ImageError{
+			Ref:     imageConfig.Ref,
+			Op:      "pull",
+			Message: err.Error(),
 		}
 	}
-	return nil
+	return rc, nil
 }
-func (c *Client) BuildImage(ctx context.Context, imageConfig *image.ImageConfig) error {
-	if imageConfig.BuildOptions.Context == nil {
-		return errors.New("no build context was supplied use image.NewImageFromSrc(dir) or supply the context manually")
-	}
+
+// BuildImage builds an image from a directory or a context
+// If the context is not included in the image config, it will return an error
+// Caller is responsible for closing the response body
+func (c *Client) ImageBuild(ctx context.Context, imageConfig *image.ImageConfig) (io.ReadCloser, error) {
 	res, err := c.wrapped.ImageBuild(ctx, imageConfig.BuildOptions.Context, *imageConfig.BuildOptions)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer res.Body.Close()
-	if _, err = io.Copy(c.imageResWriter, res.Body); err != nil {
-		return err
-	}
-	return nil
+	return res.Body, nil
 }
 
 func (c *Client) String() string {
@@ -220,19 +260,23 @@ func NewClient(ctx context.Context) (*Client, error) {
 		client.WithAPIVersionNegotiation(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error creating new docker client %s", err)
+		return nil, &errors.ConfigError{
+			Field:   "client",
+			Message: err.Error(),
+		}
 	}
 	ok, err := isDaemonRunning(ctx, c)
+	if err != nil {
+		return nil, &errors.DaemonNotRunningError{
+			Message: err.Error(),
+		}
+	}
 	if !ok {
-		return nil, err
+		return nil, errors.ErrDaemonNotRunning
 	}
 	return &Client{
-		wrapped:        c,
-		imageResWriter: os.Stdout,
-		statsResWriter: StatsFormatter(os.Stdout),
-		logResWriter:   stdcopy.NewStdWriter(os.Stdout, stdcopy.Stdout),
+		wrapped: c,
 	}, nil
-
 }
 
 // Unwraps the abstracted client for use with other docker packages
@@ -241,20 +285,21 @@ func (c *Client) Unwrap() client.APIClient {
 }
 
 // checks if the docker daemon is running by pinging it
-func isDaemonRunning(ctx context.Context, client *client.Client) (bool, error) {
-	if _, err := client.Ping(ctx); err != nil {
-		return false, fmt.Errorf("daemon is not running %s", err)
+var isDaemonRunning = func(ctx context.Context, client client.APIClient) (bool, error) {
+	_, err := client.Ping(ctx)
+	if err != nil {
+		return false, err
 	}
 	return true, nil
 }
 
 // Network Operations
 
-func (c *Client) RemoveNetwork(ctx context.Context, networkConfig *network.NetworkConfig) error {
-	return c.wrapped.NetworkRemove(ctx, networkConfig.Id)
+func (c *Client) NetworkRemove(ctx context.Context, networkID string) error {
+	return c.wrapped.NetworkRemove(ctx, networkID)
 }
 
-func (c *Client) ConnectContainerToNetwork(ctx context.Context, networkConfig *network.NetworkConfig, containerConfig *container.ContainerConfig) error {
+func (c *Client) NetworkConnect(ctx context.Context, networkConfig *network.NetworkConfig, containerConfig *container.ContainerConfig) error {
 	// Create endpoint settings
 	endpointSettings := &dockerNetwork.EndpointSettings{
 		NetworkID: networkConfig.Id,
@@ -279,58 +324,92 @@ func (c *Client) ConnectContainerToNetwork(ctx context.Context, networkConfig *n
 	return nil
 }
 
-func (c *Client) DisconnectContainerFromNetwork(ctx context.Context, networkConfig *network.NetworkConfig, containerConfig *container.ContainerConfig, force bool) error {
+func (c *Client) NetworkDisconnect(ctx context.Context, networkConfig *network.NetworkConfig, containerConfig *container.ContainerConfig, force bool) error {
 	return c.wrapped.NetworkDisconnect(ctx, networkConfig.Id, containerConfig.Id, force)
 }
 
 // Volume Operations
 
-func (c *Client) RemoveVolume(ctx context.Context, volumeConfig *volume.VolumeConfig) error {
-	return c.wrapped.VolumeRemove(ctx, volumeConfig.Options.Name, false)
+func (c *Client) VolumeRemove(ctx context.Context, name string, force bool) error {
+	return c.wrapped.VolumeRemove(ctx, name, force)
 }
 
-func (c *Client) PruneVolumes(ctx context.Context, filterMap map[string][]string) (uint64, error) {
-	args := filters.NewArgs()
-	for k, v := range filterMap {
-		for _, val := range v {
-			args.Add(k, val)
-		}
+type PruneVolumeOptionFn func(*filters.Args)
+
+// FilterIncludeLabel adds a filter to keep volumes that have the specified label key (any value).
+// Example: FilterIncludeLabel("env") keeps volumes with label "env"
+func FilterIncludeLabel(key string) PruneVolumeOptionFn {
+	return func(args *filters.Args) {
+		args.Add("all", "true") // Enable pruning
+		args.Add("label!", key) // Keep volumes with this label
 	}
+}
+
+// FilterIncludeLabelValue adds a filter to keep volumes with the specified label key=value.
+// Example: FilterIncludeLabelValue("env", "prod") keeps volumes with label env=prod
+func FilterIncludeLabelValue(key, value string) PruneVolumeOptionFn {
+	return func(args *filters.Args) {
+		args.Add("all", "true")                              // Enable pruning
+		args.Add("label!", fmt.Sprintf("%s=%s", key, value)) // Keep volumes with this label=value
+	}
+}
+
+// FilterExcludeLabel adds a filter to keep volumes that don't have the specified label key.
+// Example: FilterExcludeLabel("env") keeps volumes without label "env"
+func FilterExcludeLabel(key string) PruneVolumeOptionFn {
+	return func(args *filters.Args) {
+		args.Add("all", "true") // Enable pruning
+		args.Add("label", key)  // Keep volumes without this label
+	}
+}
+
+// FilterExcludeLabelValue adds a filter to keep volumes without the specified label key=value.
+// Example: FilterExcludeLabelValue("env", "prod") keeps volumes without label env=prod
+func FilterExcludeLabelValue(key, value string) PruneVolumeOptionFn {
+	return func(args *filters.Args) {
+		args.Add("all", "true")                             // Enable pruning
+		args.Add("label", fmt.Sprintf("%s=%s", key, value)) // Keep volumes without this label=value
+	}
+}
+
+func (c *Client) VolumePrune(ctx context.Context, pruneVolumeOptionFns ...PruneVolumeOptionFn) (*volumeType.PruneReport, error) {
+	args := filters.NewArgs()
+	// Add a default filter to enable pruning of unused volumes if no other filters are provided
+	if len(pruneVolumeOptionFns) == 0 {
+		args.Add("all", "true")
+	}
+	for _, fn := range pruneVolumeOptionFns {
+		fn(&args)
+	}
+	// Log the filter arguments
+	fmt.Printf("Volume prune filter args: %+v\n", args)
 	report, err := c.wrapped.VolumesPrune(ctx, args)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return report.SpaceReclaimed, nil
+	return &report, nil
 }
 
-// Image Operations
-
-func (c *Client) PushImage(ctx context.Context, imageConfig *image.ImageConfig) error {
+func (c *Client) ImagePush(ctx context.Context, imageConfig *image.ImageConfig) (io.ReadCloser, error) {
 	rc, err := c.wrapped.ImagePush(ctx, imageConfig.Ref, *imageConfig.PushOptions)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer rc.Close()
-	if _, err = io.Copy(c.imageResWriter, rc); err != nil {
-		return err
-	}
-	return nil
+	return rc, nil
 }
 
-func (c *Client) RemoveImage(ctx context.Context, imageConfig *image.ImageConfig, force bool) error {
-	options := imageType.RemoveOptions{
+func (c *Client) ImageRemove(ctx context.Context, imageID string, force bool, pruneChildren bool) ([]imageType.DeleteResponse, error) {
+	return c.wrapped.ImageRemove(ctx, imageID, imageType.RemoveOptions{
 		Force:         force,
-		PruneChildren: true,
-	}
-	_, err := c.wrapped.ImageRemove(ctx, imageConfig.Ref, options)
-	return err
+		PruneChildren: pruneChildren,
+	})
 }
 
-func (c *Client) TagImage(ctx context.Context, imageConfig *image.ImageConfig, newTag string) error {
+func (c *Client) ImageTag(ctx context.Context, imageConfig *image.ImageConfig, newTag string) error {
 	return c.wrapped.ImageTag(ctx, imageConfig.Ref, newTag)
 }
 
-func (c *Client) SaveImage(ctx context.Context, imageConfig *image.ImageConfig, outputFile string) error {
+func (c *Client) ImageSave(ctx context.Context, imageConfig *image.ImageConfig, outputFile string) error {
 	rc, err := c.wrapped.ImageSave(ctx, []string{imageConfig.Ref})
 	if err != nil {
 		return err
@@ -347,23 +426,95 @@ func (c *Client) SaveImage(ctx context.Context, imageConfig *image.ImageConfig, 
 	return err
 }
 
-func (c *Client) LoadImage(ctx context.Context, inputFile string) error {
+func (c *Client) ImageLoad(ctx context.Context, inputFile string) (io.ReadCloser, error) {
 	file, err := os.Open(inputFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer file.Close()
 
 	res, err := c.wrapped.ImageLoad(ctx, file, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer res.Body.Close()
+	return res.Body, nil
+}
 
-	if _, err = io.Copy(c.imageResWriter, res.Body); err != nil {
-		return err
+type VolumeListOptionFn func(*volumeType.ListOptions)
+
+func WithVolumeFilter(key, value string) VolumeListOptionFn {
+	return func(opts *volumeType.ListOptions) {
+		opts.Filters.Add(key, value)
 	}
-	return nil
+}
+
+func (c *Client) VolumeList(ctx context.Context, volumeListOptionFns ...VolumeListOptionFn) (volumeType.ListResponse, error) {
+	opts := volumeType.ListOptions{
+		Filters: filters.NewArgs(),
+	}
+	for _, fn := range volumeListOptionFns {
+		fn(&opts)
+	}
+	vols, err := c.wrapped.VolumeList(ctx, opts)
+	if err != nil {
+		return volumeType.ListResponse{}, fmt.Errorf("inspect volume failed: %w", err)
+	}
+
+	return vols, nil
+}
+
+type ImageListOptionFn func(*imageType.ListOptions)
+
+// WithImageFilter adds a filter to the image list operation.
+func WithImageFilter(key, value string) ImageListOptionFn {
+	return func(opts *imageType.ListOptions) {
+		if opts.Filters.Get(key) == nil {
+			opts.Filters = filters.NewArgs()
+		}
+		opts.Filters.Add(key, value)
+	}
+}
+
+// WithImageAll sets the all flag to true in the image list operation.
+func WithImageAll(all bool) ImageListOptionFn {
+	return func(opts *imageType.ListOptions) {
+		opts.All = all
+	}
+}
+
+// WithImageSharedSize sets the shared size flag to true in the image list operation.
+func WithImageSharedSize(sharedSize bool) ImageListOptionFn {
+	return func(opts *imageType.ListOptions) {
+		opts.SharedSize = sharedSize
+	}
+}
+
+// WithImageContainerCount sets the container count flag to true in the image list operation.
+func WithImageContainerCount(containerCount bool) ImageListOptionFn {
+	return func(opts *imageType.ListOptions) {
+		opts.ContainerCount = containerCount
+	}
+}
+
+// WithImageManifests sets the manifests flag to true in the image list operation.
+func WithImageManifests(manifests bool) ImageListOptionFn {
+	return func(opts *imageType.ListOptions) {
+		opts.Manifests = manifests
+	}
+}
+
+func (c *Client) ImageList(ctx context.Context, imageListOptionFns ...ImageListOptionFn) ([]imageType.Summary, error) {
+	opts := imageType.ListOptions{
+		Filters: filters.NewArgs(),
+	}
+	for _, fn := range imageListOptionFns {
+		fn(&opts)
+	}
+	imgs, err := c.wrapped.ImageList(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("inspect image failed: %w", err)
+	}
+
+	return imgs, nil
 }
 
 // RunAndWait creates, starts a container and waits for it to finish.
@@ -373,25 +524,40 @@ func (c *Client) LoadImage(ctx context.Context, inputFile string) error {
 // - The context is cancelled
 // Use context with timeout or cancellation to control the maximum wait time.
 func (c *Client) RunAndWait(ctx context.Context, containerConfig *container.ContainerConfig) error {
-	if err := c.CreateContainer(ctx, containerConfig); err != nil {
-		return fmt.Errorf("create container failed: %w", err)
+	if err := c.ContainerCreate(ctx, containerConfig); err != nil {
+		return err
 	}
 
-	if err := c.StartContainer(ctx, containerConfig); err != nil {
-		return fmt.Errorf("start container failed: %w", err)
+	if err := c.ContainerStart(ctx, containerConfig); err != nil {
+		return err
 	}
 
 	statusCh, errCh := c.ContainerWait(ctx, containerConfig)
 	select {
 	case err := <-errCh:
-		return fmt.Errorf("container wait failed: %w", err)
+		return &errors.ContainerError{
+			ID:      containerConfig.Name,
+			Op:      "wait",
+			Message: err.Error(),
+		}
 	case status := <-statusCh:
 		if status.StatusCode != 0 {
-			return fmt.Errorf("container exited with non-zero code: %d", status.StatusCode)
+			return &errors.ContainerError{
+				ID:      containerConfig.Name,
+				Op:      "run",
+				Message: fmt.Sprintf("exited with code %d", status.StatusCode),
+			}
 		}
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		switch ctx.Err() {
+		case context.DeadlineExceeded:
+			return errors.ErrTimeout
+		case context.Canceled:
+			return errors.ErrCanceled
+		default:
+			return ctx.Err()
+		}
 	}
 }
 
@@ -411,17 +577,6 @@ func (c *Client) GetContainerExitCode(ctx context.Context, containerConfig *cont
 		return 0, fmt.Errorf("inspect container failed: %w", err)
 	}
 	return container.State.ExitCode, nil
-}
-
-// PullImageIfNotPresent pulls an image only if it doesn't exist locally
-func (c *Client) PullImageIfNotPresent(ctx context.Context, imageConfig *image.ImageConfig) error {
-	_, _, err := c.wrapped.ImageInspectWithRaw(ctx, imageConfig.Ref)
-	if err == nil {
-		// Image exists locally
-		return nil
-	}
-
-	return c.PullImage(ctx, imageConfig)
 }
 
 // GetImageSize returns the size of an image in bytes
@@ -481,26 +636,26 @@ func (c *Client) IsVolumeExists(ctx context.Context, volumeConfig *volume.Volume
 }
 
 // GetVolumeUsage returns the size of a volume in bytes if available
-func (c *Client) GetVolumeUsage(ctx context.Context, volumeConfig *volume.VolumeConfig) (int64, error) {
-	vol, err := c.wrapped.VolumeInspect(ctx, volumeConfig.Options.Name)
+func (c *Client) VolumeUsage(ctx context.Context, name string) (*volumeType.UsageData, error) {
+	vol, err := c.wrapped.VolumeInspect(ctx, name)
 	if err != nil {
-		return 0, fmt.Errorf("volume inspect failed: %w", err)
+		return nil, fmt.Errorf("volume inspect failed: %w", err)
 	}
 	if vol.UsageData != nil {
-		return vol.UsageData.Size, nil
+		return vol.UsageData, nil
 	}
-	return 0, nil
+	return nil, fmt.Errorf("volume usage data not available")
 }
 
 // RunAsync creates and starts a container without waiting for it to finish.
 // Returns a channel that will receive the container's exit error (if any).
 // The channel will be closed when the container finishes.
 func (c *Client) RunAsync(ctx context.Context, containerConfig *container.ContainerConfig) (<-chan error, error) {
-	if err := c.CreateContainer(ctx, containerConfig); err != nil {
+	if err := c.ContainerCreate(ctx, containerConfig); err != nil {
 		return nil, fmt.Errorf("create container failed: %w", err)
 	}
 
-	if err := c.StartContainer(ctx, containerConfig); err != nil {
+	if err := c.ContainerStart(ctx, containerConfig); err != nil {
 		return nil, fmt.Errorf("start container failed: %w", err)
 	}
 
@@ -552,12 +707,9 @@ func (c *Client) ContainerExecAttachTerminal(ctx context.Context, containerConfi
 
 // ContainerExecAttach attaches to a container exec command and returns a hijacked response
 // that can be used to read the output of the exec command. It is up to the caller to close the hijacked response.
-func (c *Client) ContainerExecAttach(ctx context.Context, containerConfig *container.ContainerConfig, execConfig *exec.ExecConfig) (*types.HijackedResponse, error) {
-	res, err := c.wrapped.ContainerExecCreate(ctx, containerConfig.Id, *execConfig.Options)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create container exec: %w", err)
-	}
-	hijack, err := c.wrapped.ContainerExecAttach(ctx, res.ID, containerType.ExecAttachOptions{
+func (c *Client) ContainerExecAttach(ctx context.Context, execID string, execConfig *exec.ExecConfig) (*types.HijackedResponse, error) {
+
+	hijack, err := c.wrapped.ContainerExecAttach(ctx, execID, containerType.ExecAttachOptions{
 		ConsoleSize: execConfig.Options.ConsoleSize,
 		Tty:         execConfig.Options.Tty,
 	})
@@ -566,35 +718,69 @@ func (c *Client) ContainerExecAttach(ctx context.Context, containerConfig *conta
 	}
 	return &hijack, nil
 }
+
+func (c *Client) ContainerExecCreate(ctx context.Context, containerConfig *container.ContainerConfig, execConfig *exec.ExecConfig) (string, error) {
+	if containerConfig == nil || execConfig == nil {
+		return "", &errors.ValidationError{
+			Field:   "config",
+			Message: "container config and exec config cannot be nil",
+		}
+	}
+
+	res, err := c.wrapped.ContainerExecCreate(ctx, containerConfig.Id, *execConfig.Options)
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			return "", &errors.ResourceNotFoundError{
+				ResourceType: "container",
+				ID:           containerConfig.Id,
+			}
+		}
+		return "", &errors.ExecError{
+			ID:      containerConfig.Id,
+			Op:      "create",
+			Message: err.Error(),
+		}
+	}
+	execConfig.ID = res.ID
+	return res.ID, nil
+}
+
 func (c *Client) ContainerExecStart(ctx context.Context, containerConfig *container.ContainerConfig, execConfig *exec.ExecConfig) error {
-	return c.wrapped.ContainerExecStart(ctx, execConfig.ID, containerType.ExecStartOptions{
+	if execConfig == nil || execConfig.ID == "" {
+		return &errors.ValidationError{
+			Field:   "execConfig",
+			Message: "exec config or ID cannot be empty",
+		}
+	}
+
+	err := c.wrapped.ContainerExecStart(ctx, execConfig.ID, containerType.ExecStartOptions{
 		Detach:      execConfig.Options.Detach,
 		ConsoleSize: execConfig.Options.ConsoleSize,
 		Tty:         execConfig.Options.Tty,
 	})
-}
-
-type ExecInspect struct {
-	ExecID      string `json:"ID,omitempty"`
-	ContainerID string `json:"ContainerID,omitempty"`
-	Running     bool   `json:"Running,omitempty"`
-	ExitCode    int    `json:"ExitCode,omitempty"`
-	Pid         int    `json:"Pid,omitempty"`
+	if err != nil {
+		if client.IsErrNotFound(err) {
+			return &errors.ResourceNotFoundError{
+				ResourceType: "exec",
+				ID:           execConfig.ID,
+			}
+		}
+		return &errors.ExecError{
+			ID:      execConfig.ID,
+			Op:      "start",
+			Message: err.Error(),
+		}
+	}
+	return nil
 }
 
 // ContainerExecInspect returns information about a container exec command.
-func (c *Client) ContainerExecInspect(ctx context.Context, containerConfig *container.ContainerConfig, execConfig *exec.ExecConfig) (*ExecInspect, error) {
+func (c *Client) ContainerExecInspect(ctx context.Context, execConfig *exec.ExecConfig) (*containerType.ExecInspect, error) {
 	inspect, err := c.wrapped.ContainerExecInspect(ctx, execConfig.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect container exec: %w", err)
 	}
-	return &ExecInspect{
-		ExecID:      inspect.ExecID,
-		ContainerID: inspect.ContainerID,
-		Running:     inspect.Running,
-		ExitCode:    inspect.ExitCode,
-		Pid:         inspect.Pid,
-	}, nil
+	return &inspect, nil
 }
 
 // ContainerExecResize resizes the TTY of a container exec command.
@@ -610,32 +796,114 @@ func (c *Client) ContainerExport(ctx context.Context, containerConfig *container
 	return c.wrapped.ContainerExport(ctx, containerConfig.Id)
 }
 
-// ListedContainer is the response from the ContainerList API.
-type ListedContainer struct {
-	ID         string       `json:"Id,omitempty"`
-	Names      []string     `json:"Names,omitempty"`
-	Image      string       `json:"Image,omitempty"`
-	ImageID    string       `json:"ImageID,omitempty"`
-	Command    string       `json:"Command,omitempty"`
-	Created    int64        `json:"Created,omitempty"`
-	Ports      []types.Port `json:"Ports,omitempty"`
-	SizeRw     int64        `json:"SizeRw,omitempty"`
-	SizeRootFs int64        `json:"SizeRootFs,omitempty"`
-	Labels     map[string]string
-	State      string `json:"State,omitempty"`
-	Status     string `json:"Status,omitempty"`
-	HostConfig struct {
-		NetworkMode string            `json:"NetworkMode,omitempty"`
-		Annotations map[string]string `json:"Annotations,omitempty"`
-	}
-	NetworkSettings *types.SummaryNetworkSettings `json:"NetworkSettings,omitempty"`
-	Mounts          []types.MountPoint            `json:"Mounts,omitempty"`
+// NetworkConnect connects a container to a network.
+func (c *Client) NetworkConnectContainer(ctx context.Context, networkID string, containerID string, endpoint *endpointoptions.Endpoint) error {
+	return c.wrapped.NetworkConnect(ctx, networkID, containerID, endpoint.Settings)
 }
 
-type ListOptionFn func(*containerType.ListOptions)
+// NetworkDisconnect disconnects a container from a network.
+func (c *Client) NetworkDisconnectContainer(ctx context.Context, networkID string, containerID string, force bool) error {
+	return c.wrapped.NetworkDisconnect(ctx, networkID, containerID, force)
+}
 
-func (c *Client) ContainerList(ctx context.Context, listOptionFns ...ListOptionFn) ([]ListedContainer, error) {
-	listOpts := containerType.ListOptions{}
+type NetworkInspectOptionFn func(*dockerNetwork.InspectOptions)
+
+// WithNetworkInspectScope sets the scope of the network inspect operation.
+func WithNetworkInspectScope(scope string) NetworkInspectOptionFn {
+	return func(opts *dockerNetwork.InspectOptions) {
+		opts.Scope = scope
+	}
+}
+
+// WithNetworkInspectVerbose sets the verbose flag to true in the network inspect operation.
+func WithNetworkInspectVerbose() NetworkInspectOptionFn {
+	return func(opts *dockerNetwork.InspectOptions) {
+		opts.Verbose = true
+	}
+}
+
+func (c *Client) NetworkInspect(ctx context.Context, networkID string, networkInspectOptionFns ...NetworkInspectOptionFn) (dockerNetwork.Inspect, error) {
+	opt := dockerNetwork.InspectOptions{}
+	for _, fn := range networkInspectOptionFns {
+		fn(&opt)
+	}
+	return c.wrapped.NetworkInspect(ctx, networkID, opt)
+}
+
+type NetworkListOptionFn func(*dockerNetwork.ListOptions)
+
+func WithNetworkFilter(key, value string) NetworkListOptionFn {
+	return func(opts *dockerNetwork.ListOptions) {
+		opts.Filters.Add(key, value)
+	}
+}
+
+func (c *Client) NetworkList(ctx context.Context, networkListOptionFns ...NetworkListOptionFn) ([]dockerNetwork.Summary, error) {
+	opts := dockerNetwork.ListOptions{
+		Filters: filters.NewArgs(),
+	}
+	for _, fn := range networkListOptionFns {
+		fn(&opts)
+	}
+	networks, err := c.wrapped.NetworkList(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list networks: %w", err)
+	}
+	return networks, nil
+}
+
+type ListContainerOptionFn func(*containerType.ListOptions)
+
+// WithContainerFilter adds a filter to the container list operation.
+func WithContainerFilter(key, value string) ListContainerOptionFn {
+	return func(opts *containerType.ListOptions) {
+		if opts.Filters.Get(key) == nil {
+			opts.Filters = filters.NewArgs()
+		}
+		opts.Filters.Add(key, value)
+	}
+}
+
+// WithContainerAll sets the all flag to true in the container list operation.
+func WithContainerAll(all bool) ListContainerOptionFn {
+	return func(opts *containerType.ListOptions) {
+		opts.All = all
+	}
+}
+
+// WithContainerLimit sets the limit of the container list operation.
+func WithContainerLimit(limit int) ListContainerOptionFn {
+	return func(opts *containerType.ListOptions) {
+		opts.Limit = limit
+	}
+}
+
+// WithContainerSince sets the since flag to true in the container list operation.
+func WithContainerSince(since string) ListContainerOptionFn {
+	return func(opts *containerType.ListOptions) {
+		opts.Since = since
+	}
+}
+
+// WithContainerBefore sets the before flag to true in the container list operation.
+func WithContainerBefore(before string) ListContainerOptionFn {
+	return func(opts *containerType.ListOptions) {
+		opts.Before = before
+	}
+}
+
+// WithContainerSize sets the size flag to true in the container list operation.
+func WithContainerSize(size bool) ListContainerOptionFn {
+	return func(opts *containerType.ListOptions) {
+		opts.Size = size
+	}
+}
+
+// ContainerList lists all containers. provide option functions to filter the list.
+func (c *Client) ContainerList(ctx context.Context, listOptionFns ...ListContainerOptionFn) ([]types.Container, error) {
+	listOpts := containerType.ListOptions{
+		Filters: filters.NewArgs(),
+	}
 	for _, fn := range listOptionFns {
 		fn(&listOpts)
 	}
@@ -644,43 +912,17 @@ func (c *Client) ContainerList(ctx context.Context, listOptionFns ...ListOptionF
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
 	}
-	listedContainers := make([]ListedContainer, 0, len(containers))
-	for _, c := range containers {
-		listedContainers = append(listedContainers, ListedContainer{
-			ID:              c.ID,
-			Names:           c.Names,
-			Image:           c.Image,
-			ImageID:         c.ImageID,
-			Command:         c.Command,
-			Created:         c.Created,
-			Ports:           c.Ports,
-			SizeRw:          c.SizeRw,
-			SizeRootFs:      c.SizeRootFs,
-			Labels:          c.Labels,
-			State:           c.State,
-			Status:          c.Status,
-			NetworkSettings: c.NetworkSettings,
-			HostConfig: struct {
-				NetworkMode string            `json:"NetworkMode,omitempty"`
-				Annotations map[string]string `json:"Annotations,omitempty"`
-			}{
-				NetworkMode: c.HostConfig.NetworkMode,
-				Annotations: c.HostConfig.Annotations,
-			},
-			Mounts: c.Mounts,
-		})
-	}
 
-	return listedContainers, nil
+	return containers, nil
 }
 
-// ContainerGetStatsChan returns near realtime stats for a given container.
+// ContainerStatsChan returns near realtime stats for a given container.
 // It is a blocking call that will not return until either:
 // - The context is cancelled
 // - The container is stopped
 // - An error occurs
 // Use context with timeout or cancellation to control the maximum wait time.
-func (c *Client) ContainerGetStatsChan(ctx context.Context, containerConfig *container.ContainerConfig) (<-chan ContainerStats, <-chan error) {
+func (c *Client) ContainerStatsChan(ctx context.Context, containerConfig *container.ContainerConfig) (<-chan ContainerStats, <-chan error) {
 	statsRes, err := c.wrapped.ContainerStats(ctx, containerConfig.Id, true)
 	if err != nil {
 		errCh := make(chan error, 1)
@@ -689,7 +931,7 @@ func (c *Client) ContainerGetStatsChan(ctx context.Context, containerConfig *con
 		return nil, errCh
 	}
 
-	statsCh := make(chan ContainerStats)
+	statsCh := make(chan ContainerStats, 100)
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -719,7 +961,7 @@ func (c *Client) ContainerGetStatsChan(ctx context.Context, containerConfig *con
 }
 
 // ContainerStatsOneShot gets a single stat entry from a container. It differs from `ContainerStats` in that the API should not wait to prime the stats
-func (c *Client) ContainerGetStatsOneShot(ctx context.Context, containerConfig *container.ContainerConfig) (ContainerStats, error) {
+func (c *Client) ContainerStatsOneShot(ctx context.Context, containerConfig *container.ContainerConfig) (ContainerStats, error) {
 	statsRes, err := c.wrapped.ContainerStatsOneShot(ctx, containerConfig.Id)
 	if err != nil {
 		return ContainerStats{}, fmt.Errorf("failed to get container stats: %w", err)
@@ -733,8 +975,8 @@ func (c *Client) ContainerGetStatsOneShot(ctx context.Context, containerConfig *
 	return containerStats, nil
 }
 
-// ContainerCommit applies changes to a container and creates a new tagged image.
-func (c *Client) ContainerCommit(ctx context.Context, containerConfig *container.ContainerConfig, imageConfig *image.ImageConfig, commitOptions ...commitoptions.CommitOptionsFn) (string, error) {
+// ImageCommit applies changes to a container and creates a new tagged image.
+func (c *Client) ImageCommit(ctx context.Context, containerConfig *container.ContainerConfig, imageConfig *image.ImageConfig, commitOptions ...commitoptions.CommitOptionsFn) (string, error) {
 	options := containerType.CommitOptions{}
 	for _, fn := range commitOptions {
 		fn(&options)
@@ -750,7 +992,7 @@ func (c *Client) ContainerCommit(ctx context.Context, containerConfig *container
 type UpdateOptionFn func(*containerType.UpdateConfig)
 
 // ContainerUpdate updates a container with new configuration.
-func (c *Client) ContainerUpdate(ctx context.Context, containerConfig *container.ContainerConfig, updateOptions ...UpdateOptionFn) (warnings []string, err error) {
+func (c *Client) ContainerUpdate(ctx context.Context, containerConfig *container.ContainerConfig, updateOptions ...UpdateOptionFn) (*containerType.ContainerUpdateOKBody, error) {
 	options := containerType.UpdateConfig{}
 	for _, fn := range updateOptions {
 		fn(&options)
@@ -760,39 +1002,16 @@ func (c *Client) ContainerUpdate(ctx context.Context, containerConfig *container
 	if err != nil {
 		return nil, fmt.Errorf("failed to update container: %w", err)
 	}
-	return res.Warnings, nil
-}
-
-// Diff is the response from the ContainerDiff API.
-type Diff struct {
-	Path string `json:"Path"`
-	Kind uint8  `json:"Kind"`
+	return &res, nil
 }
 
 // ContainerDiff returns the changes on a container's filesystem.
-func (c *Client) ContainerDiff(ctx context.Context, containerConfig *container.ContainerConfig) ([]Diff, error) {
+func (c *Client) ContainerDiff(ctx context.Context, containerConfig *container.ContainerConfig) ([]containerType.FilesystemChange, error) {
 	diff, err := c.wrapped.ContainerDiff(ctx, containerConfig.Id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container diff: %w", err)
 	}
-	diffs := make([]Diff, 0, len(diff))
-	for _, d := range diff {
-		diffs = append(diffs, Diff{
-			Path: d.Path,
-			Kind: uint8(d.Kind),
-		})
-	}
-	return diffs, nil
-}
-
-// ContainerPause pauses a container.
-func (c *Client) ContainerPause(ctx context.Context, containerConfig *container.ContainerConfig) error {
-	return c.wrapped.ContainerPause(ctx, containerConfig.Id)
-}
-
-// ContainerUnpause unpauses a container.
-func (c *Client) ContainerUnpause(ctx context.Context, containerConfig *container.ContainerConfig) error {
-	return c.wrapped.ContainerUnpause(ctx, containerConfig.Id)
+	return diff, nil
 }
 
 // ContainerKill kills a container.
@@ -806,30 +1025,13 @@ func (c *Client) ContainerRename(ctx context.Context, containerConfig *container
 	return c.wrapped.ContainerRename(ctx, containerConfig.Id, newName)
 }
 
-// ContainerTop is the response from the ContainerTop API.
-type ContainerTop struct {
-
-	// Each process running in the container, where each is process
-	// is an array of values corresponding to the titles.
-	//
-	// Required: true
-	Processes [][]string `json:"Processes"`
-
-	// The ps column titles
-	// Required: true
-	Titles []string `json:"Titles"`
-}
-
 // ContainerTop returns the top process information for a container.
-func (c *Client) ContainerTop(ctx context.Context, containerConfig *container.ContainerConfig, psArgs []string) (ContainerTop, error) {
+func (c *Client) ContainerTop(ctx context.Context, containerConfig *container.ContainerConfig, psArgs []string) (*containerType.ContainerTopOKBody, error) {
 	top, err := c.wrapped.ContainerTop(ctx, containerConfig.Id, psArgs)
 	if err != nil {
-		return ContainerTop{}, fmt.Errorf("failed to get container top: %w", err)
+		return nil, fmt.Errorf("failed to get container top: %w", err)
 	}
-	return ContainerTop{
-		Processes: top.Processes,
-		Titles:    top.Titles,
-	}, nil
+	return &top, nil
 }
 
 // ContainerInspect returns the JSON representation of a container. It returns docker's ContainerJSON type.
@@ -840,11 +1042,6 @@ func (c *Client) ContainerInspect(ctx context.Context, containerConfig *containe
 		return types.ContainerJSON{}, fmt.Errorf("failed to get container inspect: %w", err)
 	}
 	return inspect, nil
-}
-
-type PruneResponse struct {
-	SpaceReclaimed    uint64   `json:"SpaceReclaimed,omitempty"`
-	ContainersDeleted []string `json:"ContainersDeleted,omitempty"`
 }
 
 type PruneOptionFn func(*filters.Args)
@@ -859,41 +1056,95 @@ func WithPruneFilter(key, value string) PruneOptionFn {
 // ContainerPrune prunes containers based on the provided options.
 // It returns a PruneResponse containing the space reclaimed and the containers deleted.
 // It uses the filters.Args type to build the filter for the prune operation.
-func (c *Client) ContainerPrune(ctx context.Context, pruneOptions ...PruneOptionFn) (PruneResponse, error) {
+func (c *Client) ContainerPrune(ctx context.Context, pruneOptions ...PruneOptionFn) (*containerType.PruneReport, error) {
 	filter := filters.NewArgs()
 	for _, fn := range pruneOptions {
 		fn(&filter)
 	}
 	prune, err := c.wrapped.ContainersPrune(ctx, filter)
 	if err != nil {
-		return PruneResponse{}, fmt.Errorf("failed to prune containers: %w", err)
+		return nil, fmt.Errorf("failed to prune containers: %w", err)
 	}
-	return PruneResponse{
-		SpaceReclaimed:    prune.SpaceReclaimed,
-		ContainersDeleted: prune.ContainersDeleted,
-	}, nil
+	return &prune, nil
 }
 
-type ImagePruneResponse struct {
-	SpaceReclaimed uint64   `json:"SpaceReclaimed,omitempty"`
-	ImagesDeleted  []string `json:"ImagesDeleted,omitempty"`
-}
-
-func (c *Client) PruneImages(ctx context.Context, pruneOptions ...PruneOptionFn) (ImagePruneResponse, error) {
+func (c *Client) ImagesPrune(ctx context.Context, pruneOptions ...PruneOptionFn) (*imageType.PruneReport, error) {
 	filter := filters.NewArgs()
 	for _, fn := range pruneOptions {
 		fn(&filter)
 	}
 	prune, err := c.wrapped.ImagesPrune(ctx, filter)
 	if err != nil {
-		return ImagePruneResponse{}, fmt.Errorf("failed to prune images: %w", err)
+		return nil, fmt.Errorf("failed to prune images: %w", err)
 	}
-	imagesDeleted := make([]string, 0, len(prune.ImagesDeleted))
-	for _, image := range prune.ImagesDeleted {
-		imagesDeleted = append(imagesDeleted, image.Deleted)
+
+	return &prune, nil
+}
+
+func (c *Client) ImageHistory(ctx context.Context, imageID string) ([]imageType.HistoryResponseItem, error) {
+	history, err := c.wrapped.ImageHistory(ctx, imageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image history: %w", err)
 	}
-	return ImagePruneResponse{
-		SpaceReclaimed: prune.SpaceReclaimed,
-		ImagesDeleted:  imagesDeleted,
-	}, nil
+	return history, nil
+}
+
+func (c *Client) ImageInspect(ctx context.Context, imageID string) (*types.ImageInspect, error) {
+	inspect, _, err := c.wrapped.ImageInspectWithRaw(ctx, imageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image inspect: %w", err)
+	}
+	return &inspect, nil
+}
+
+// ImageLoad loads an image in the docker host from the client host. It's up to the caller to close the io.ReadCloser in the ImageLoadResponse returned by this function
+func (c *Client) ImageLoadFromReader(ctx context.Context, input io.Reader, quiet bool) (*imageType.LoadResponse, error) {
+	rc, err := c.wrapped.ImageLoad(ctx, input, quiet)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load image: %w", err)
+	}
+	return &rc, nil
+}
+
+// ImageSave retrieves one or more images from the docker host as an io.ReadCloser. It's up to the caller to store the images and close the stream.
+func (c *Client) ImageSaveToReader(ctx context.Context, imageIDs []string) (io.ReadCloser, error) {
+	rc, err := c.wrapped.ImageSave(ctx, imageIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save image: %w", err)
+	}
+	return rc, nil
+}
+
+// ImageSearchOptionFn is a function type that configures search options for Docker images.
+type ImageSearchOptionFn func(*registry.SearchOptions)
+
+// WithSearchLimit sets the maximum number of search results to return.
+// The limit must be between 1 and 100.
+func WithSearchLimit(limit int) ImageSearchOptionFn {
+	return func(opts *registry.SearchOptions) {
+		opts.Limit = limit
+	}
+}
+
+// WithSearchFilters adds filters to the search operation.
+func WithSearchFilters(filters filters.Args) ImageSearchOptionFn {
+	return func(opts *registry.SearchOptions) {
+		opts.Filters = filters
+	}
+}
+
+// ImageSearch searches for an image on Docker Hub.
+// The query parameter specifies the term to search for.
+// Returns a slice of SearchResult containing the search results.
+func (c *Client) ImageSearch(ctx context.Context, query string, opts ...ImageSearchOptionFn) ([]registry.SearchResult, error) {
+	searchOpts := registry.SearchOptions{}
+	for _, fn := range opts {
+		fn(&searchOpts)
+	}
+
+	results, err := c.wrapped.ImageSearch(ctx, query, searchOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search images: %w", err)
+	}
+	return results, nil
 }

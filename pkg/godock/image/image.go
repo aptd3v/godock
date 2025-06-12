@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/aptd3v/godock/pkg/godock/imageoptions"
 	"github.com/docker/docker/api/types"
@@ -51,53 +50,15 @@ func (img *ImageConfig) String() string {
 	return img.Ref
 }
 
-// ValidateReference checks if the image reference is valid.
-// It ensures the reference follows Docker's image naming conventions.
-func ValidateReference(ref string) error {
-	if ref == "" {
-		return fmt.Errorf("image reference cannot be empty")
-	}
-
-	// Basic format validation
-	parts := strings.Split(ref, "/")
-	if len(parts) > 3 {
-		return fmt.Errorf("invalid image reference format: %s", ref)
-	}
-
-	// Check for valid registry format if present
-	if len(parts) > 2 {
-		registry := parts[0]
-		if !strings.Contains(registry, ".") && registry != "localhost" {
-			return fmt.Errorf("invalid registry format in reference: %s", ref)
-		}
-	}
-
-	// Check tag/digest format
-	name := parts[len(parts)-1]
-	if strings.Count(name, ":") > 1 {
-		return fmt.Errorf("invalid tag format in reference: %s", ref)
-	}
-
-	if strings.Contains(name, "@") && !strings.Contains(name, "sha256:") {
-		return fmt.Errorf("invalid digest format in reference: %s", ref)
-	}
-
-	return nil
-}
-
 // NewConfig creates a new Image configuration with the specified image reference.
 // The Image instance contains pull, push, and build options for the Docker image.
-func NewConfig(ref string) (*ImageConfig, error) {
-	if err := ValidateReference(ref); err != nil {
-		return nil, err
-	}
-
+func NewConfig(ref string) *ImageConfig {
 	return &ImageConfig{
 		Ref:          ref,
 		BuildOptions: &types.ImageBuildOptions{},
 		PullOptions:  &image.PullOptions{},
 		PushOptions:  &image.PushOptions{},
-	}, nil
+	}
 }
 
 /*
@@ -124,7 +85,7 @@ func NewImageFromSrc(dir string) (*ImageConfig, error) {
 
 	// Check for Dockerfile
 	if _, err := os.Stat(filepath.Join(dir, "Dockerfile")); os.IsNotExist(err) {
-		return nil, fmt.Errorf("Dockerfile not found in directory: %s", dir)
+		return nil, fmt.Errorf("the Dockerfile is required in the directory: %s", dir)
 	}
 
 	return &ImageConfig{

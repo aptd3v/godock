@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -21,12 +22,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
-	img, err := image.NewConfig("alpine:latest")
+	img := image.NewConfig("alpine")
+	rc, err := client.ImagePull(ctx, img)
 	if err != nil {
-		log.Fatalf("failed to create image: %v", err)
-	}
-	if err := client.PullImage(ctx, img); err != nil {
 		log.Fatalf("failed to pull image: %v", err)
+	}
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("failed to copy logs: %v", err)
 	}
 	container := container.NewConfig("test-container")
 	container.SetContainerOptions(
@@ -41,15 +45,15 @@ func main() {
 		cleanup(client, container)
 		os.Exit(1)
 	}()
-	if err := client.CreateContainer(ctx, container); err != nil {
+	if err := client.ContainerCreate(ctx, container); err != nil {
 		log.Fatalf("failed to create container: %v", err)
 	}
-	if err := client.StartContainer(ctx, container); err != nil {
+	if err := client.ContainerStart(ctx, container); err != nil {
 		log.Fatalf("failed to start container: %v", err)
 	}
 	sixMegaBytes := int64(6 * 1024 * 1024)
 	defer cleanup(client, container)
-	warnings, err := client.ContainerUpdate(
+	res, err := client.ContainerUpdate(
 		ctx,
 		container,
 		updateoptions.WithRestartPolicy("no", 0),
@@ -61,15 +65,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to update container: %v", err)
 	}
-	if len(warnings) > 0 {
-		fmt.Println(warnings)
+	if len(res.Warnings) > 0 {
+		fmt.Println(res.Warnings)
 	} else {
 		fmt.Println("container updated successfully without warnings")
 	}
 }
 func cleanup(client *godock.Client, container *container.ContainerConfig) {
 	ctx := context.Background()
-	if err := client.RemoveContainer(ctx, container, true); err != nil {
+	if err := client.ContainerRemove(ctx, container, true); err != nil {
 		log.Fatalf("failed to remove container: %v", err)
 	}
 }

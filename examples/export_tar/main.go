@@ -20,12 +20,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
-	image, err := image.NewConfig("alpine:latest")
+	image := image.NewConfig("alpine")
+	rc, err := client.ImagePull(ctx, image)
 	if err != nil {
-		log.Fatalf("failed to create image: %v", err)
-	}
-	if err := client.PullImage(ctx, image); err != nil {
 		log.Fatalf("failed to pull image: %v", err)
+	}
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("failed to copy logs: %v", err)
 	}
 	container := container.NewConfig("export-container-tar-test")
 	container.SetContainerOptions(
@@ -36,10 +39,10 @@ func main() {
 	container.SetHostOptions(
 		hostoptions.AutoRemove(),
 	)
-	if err := client.CreateContainer(ctx, container); err != nil {
+	if err := client.ContainerCreate(ctx, container); err != nil {
 		log.Fatalf("failed to create container: %v", err)
 	}
-	if err := client.StartContainer(ctx, container); err != nil {
+	if err := client.ContainerStart(ctx, container); err != nil {
 		log.Fatalf("failed to start container: %v", err)
 	}
 	export, err := client.ContainerExport(ctx, container)
@@ -62,7 +65,7 @@ func main() {
 	//load the image from the exported tar file
 	exec.Command("docker", "load", "-i", "export.tar").Run()
 
-	if err := client.RemoveContainer(ctx, container, true); err != nil {
+	if err := client.ContainerRemove(ctx, container, true); err != nil {
 		log.Fatalf("failed to remove container: %v", err)
 	}
 }

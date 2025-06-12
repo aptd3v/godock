@@ -23,7 +23,7 @@ func main() {
 		networkoptions.EnableIPV6(true),
 	)
 
-	if err := client.CreateNetwork(ctx, network); err != nil {
+	if err := client.NetworkCreate(ctx, network); err != nil {
 		log.Fatal(err)
 	}
 }

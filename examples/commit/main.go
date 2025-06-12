@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -29,19 +30,22 @@ func main() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	img, err := image.NewConfig("alpine")
+	img := image.NewConfig("alpine")
+	rc, err := client.ImagePull(ctx, img)
 	if err != nil {
-		log.Fatalf("failed to create image: %v", err)
-	}
-	if err := client.PullImage(ctx, img); err != nil {
 		log.Fatalf("failed to pull image: %v", err)
+	}
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("failed to copy logs: %v", err)
 	}
 	commitContainer := container.NewConfig("commit-test")
 	commitContainer.SetContainerOptions(
 		containeroptions.Image(img),
 		containeroptions.CMD("sh", "-c", "apk add --no-cache htop"),
 	)
-	if err := client.CreateContainer(ctx, commitContainer); err != nil {
+	if err := client.ContainerCreate(ctx, commitContainer); err != nil {
 		log.Fatalf("failed to create container: %v", err)
 	}
 
@@ -52,11 +56,11 @@ func main() {
 		os.Exit(1)
 	}()
 
-	if err := client.StartContainer(ctx, commitContainer); err != nil {
+	if err := client.ContainerStart(ctx, commitContainer); err != nil {
 		cleanup(client, commitContainer)
 		log.Fatalf("failed to start container: %v", err)
 	}
-	logs, err := client.GetContainerLogs(ctx, commitContainer)
+	logs, err := client.ContainerLogs(ctx, commitContainer)
 	if err != nil {
 		cleanup(client, commitContainer)
 		log.Fatalf("failed to get container logs: %v", err)
@@ -70,7 +74,7 @@ func main() {
 	}
 	fmt.Println("stdout", stdout.String())
 
-	commitId, err := client.ContainerCommit(
+	commitId, err := client.ImageCommit(
 		ctx,
 		commitContainer,
 		img,
@@ -87,16 +91,13 @@ func main() {
 	cleanup(client, commitContainer)
 
 	// Create new container from committed image
-	img, err = image.NewConfig(commitId)
-	if err != nil {
-		log.Fatalf("failed to create image: %v", err)
-	}
+	img = image.NewConfig(commitId)
 	commitContainer = container.NewConfig("commit-test-2")
 	commitContainer.SetContainerOptions(
 		containeroptions.Image(img),
 		containeroptions.CMD("tail", "-f", "/dev/null"),
 	)
-	if err := client.CreateContainer(ctx, commitContainer); err != nil {
+	if err := client.ContainerCreate(ctx, commitContainer); err != nil {
 		log.Fatalf("failed to create container: %v", err)
 	}
 
@@ -107,7 +108,7 @@ func main() {
 		os.Exit(1)
 	}()
 
-	if err := client.StartContainer(ctx, commitContainer); err != nil {
+	if err := client.ContainerStart(ctx, commitContainer); err != nil {
 		cleanup(client, commitContainer)
 		log.Fatalf("failed to start container: %v", err)
 	}
@@ -132,7 +133,7 @@ func main() {
 		log.Printf("Session ended with error: %v", err)
 	}
 	//remove committed container image
-	if err := client.RemoveImage(ctx, img, true); err != nil {
+	if _, err := client.ImageRemove(ctx, img.Ref, true, true); err != nil {
 		log.Printf("Failed to remove image: %v", err)
 	}
 }
@@ -140,7 +141,7 @@ func main() {
 func cleanup(client *godock.Client, container *container.ContainerConfig) {
 	ctx := context.Background()
 	fmt.Println("\nCleaning up...")
-	if err := client.RemoveContainer(ctx, container, true); err != nil {
+	if err := client.ContainerRemove(ctx, container, true); err != nil {
 		log.Printf("Failed to remove container: %v", err)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -60,18 +61,20 @@ func main() {
 		networkoptions.Attachable(),
 	)
 
-	if err := client.CreateNetwork(ctx, net); err != nil {
+	if err := client.NetworkCreate(ctx, net); err != nil {
 		log.Fatalf("Failed to create network: %v", err)
 	}
 
 	// Pull MongoDB image
-	image, err := image.NewConfig("mongo:latest")
-	if err != nil {
-		log.Fatalf("Failed to create image: %v", err)
-	}
-	err = client.PullImage(ctx, image)
+	image := image.NewConfig("mongo")
+	rc, err := client.ImagePull(ctx, image)
 	if err != nil {
 		log.Fatalf("Failed to pull image: %v", err)
+	}
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("failed to copy logs: %v", err)
 	}
 
 	// Create MongoDB container configuration
@@ -142,15 +145,15 @@ func main() {
 		defer cancel()
 
 		// Stop and remove the container first
-		if err := client.StopContainer(cleanupCtx, mongo); err != nil {
+		if err := client.ContainerStop(cleanupCtx, mongo); err != nil {
 			log.Printf("Warning: Failed to stop container: %v", err)
 		}
-		if err := client.RemoveContainer(cleanupCtx, mongo, true); err != nil {
+		if err := client.ContainerRemove(cleanupCtx, mongo, true); err != nil {
 			log.Printf("Warning: Failed to remove container: %v", err)
 		}
 
 		// Then remove the network
-		if err := client.RemoveNetwork(cleanupCtx, net); err != nil {
+		if err := client.NetworkRemove(cleanupCtx, net.Id); err != nil {
 			log.Printf("Warning: Failed to remove network: %v", err)
 		} else {
 			log.Println("Successfully cleaned up network")
@@ -158,11 +161,11 @@ func main() {
 	}()
 
 	// Create and start MongoDB container
-	if err := client.CreateContainer(ctx, mongo); err != nil {
+	if err := client.ContainerCreate(ctx, mongo); err != nil {
 		log.Fatalf("Failed to create MongoDB container: %v", err)
 	}
 
-	if err := client.StartContainer(ctx, mongo); err != nil {
+	if err := client.ContainerStart(ctx, mongo); err != nil {
 		log.Fatalf("Failed to start MongoDB container: %v", err)
 	}
 

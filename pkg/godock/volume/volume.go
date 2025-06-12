@@ -26,5 +26,8 @@ func (v *VolumeConfig) SetOptions(setVOFns ...volumeoptions.SetVolumeOptFn) {
 // NewVolume creates a new Volume instance with the specified name.
 // The Volume instance contains configuration options for creating a Docker volume.
 func NewConfig(name string) *VolumeConfig {
-	return &VolumeConfig{Options: &volume.CreateOptions{Name: name}}
+	return &VolumeConfig{Options: &volume.CreateOptions{
+		Name:   name,
+		Labels: make(map[string]string),
+	}}
 }

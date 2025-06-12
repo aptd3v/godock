@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -51,15 +50,10 @@ func (a *API) runContainer(w http.ResponseWriter, r *http.Request) {
 
 	// Setup container
 	name := req.Name + "_" + uuid.NewString()
-	img, err := image.NewConfig(req.Image)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Invalid image: %v", err), http.StatusBadRequest)
-		return
-	}
+	img := image.NewConfig(req.Image)
 
 	// Pull image silently
-	a.client.SetImageResponeWriter(io.Discard)
-	if err := a.client.PullImage(r.Context(), img); err != nil {
+	if _, err := a.client.ImagePull(context.Background(), img); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to pull image: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -78,26 +72,25 @@ func (a *API) runContainer(w http.ResponseWriter, r *http.Request) {
 	c.SetHostOptions(hostoptions.AutoRemove())
 
 	// Create and start container
-	if err := a.client.CreateContainer(r.Context(), c); err != nil {
+	if err := a.client.ContainerCreate(r.Context(), c); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create container: %v", err), http.StatusInternalServerError)
 		return
 	}
-	if err := a.client.StartContainer(r.Context(), c); err != nil {
+	if err := a.client.ContainerStart(r.Context(), c); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to start container: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	// Stream logs
 	w.Header().Set("Content-Type", "text/plain")
-	logs, err := a.client.GetContainerLogs(r.Context(), c)
+	logs, err := a.client.ContainerLogs(r.Context(), c)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get logs: %v", err), http.StatusInternalServerError)
 		return
 	}
-	defer logs.Close()
 
 	// Use LogCopier with prefixes to distinguish stdout and stderr
-	copier := godock.NewLogCopier(w, nil)
+	copier := godock.NewLogCopier(os.Stdout, nil)
 	if _, err := copier.CopyWithPrefix(logs, "[stdout] ", "[stderr] "); err != nil {
 		log.Printf("Error copying logs: %v", err)
 	}

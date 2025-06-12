@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"os"
 
 	"github.com/aptd3v/godock/pkg/godock"
 	"github.com/aptd3v/godock/pkg/godock/container"
@@ -17,12 +19,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create client: %v", err)
 	}
-	img, err := image.NewConfig("alpine:latest")
+	img := image.NewConfig("alpine")
+	rc, err := client.ImagePull(ctx, img)
 	if err != nil {
-		log.Fatalf("failed to create image config: %v", err)
-	}
-	if err := client.PullImage(ctx, img); err != nil {
 		log.Fatalf("failed to pull image: %v", err)
+	}
+	defer rc.Close()
+	_, err = io.Copy(os.Stdout, rc)
+	if err != nil {
+		log.Fatalf("failed to copy logs: %v", err)
 	}
 
 	container := container.NewConfig("prune-test")
@@ -30,7 +35,7 @@ func main() {
 		containeroptions.Label("prune-test", "true"),
 		containeroptions.CMD("echo", "prune-test"),
 	)
-	if err := client.CreateContainer(ctx, container); err != nil {
+	if err := client.ContainerCreate(ctx, container); err != nil {
 		log.Fatalf("failed to create container: %v", err)
 	}
 
