@@ -44,5 +44,5 @@ func main() {
 		log.Fatalf("failed to prune containers: %v", err)
 	}
 
-	fmt.Printf("successfuly pruned containers: %v.\nspace reclaimed: %v\n", prune.ContainersDeleted, prune.SpaceReclaimed)
+	fmt.Printf("successfully pruned containers: %v.\nspace reclaimed: %v\n", prune.ContainersDeleted, prune.SpaceReclaimed)
 }
