@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -173,8 +174,14 @@ func main() {
 		log.Printf("Setting up %s...", name)
 
 		// Pull image
-		if _, err := client.ImagePull(ctx, cfg.image); err != nil {
+		rc, err := client.ImagePull(ctx, cfg.image)
+		if err != nil {
 			log.Fatalf("Failed to pull %s image: %v", name, err)
+		}
+
+		_, err = io.Copy(os.Stdout, rc)
+		if err != nil {
+			log.Fatalf("Failed to pull image %s\n", err)
 		}
 
 		// Create container

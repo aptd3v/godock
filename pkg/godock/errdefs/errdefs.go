@@ -1,5 +1,4 @@
-// Package errors provides custom error types for the godock client
-package errors
+package errdefs
 
 import (
 	"errors"
@@ -28,6 +27,7 @@ type ResourceNotFoundError struct {
 }
 
 func (e *ResourceNotFoundError) Error() string {
+
 	return fmt.Sprintf("%s not found: %s", e.ResourceType, e.ID)
 }
 
