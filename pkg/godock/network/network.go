@@ -23,6 +23,8 @@ func NewConfig(name string) *NetworkConfig {
 
 func (n *NetworkConfig) SetOptions(setNOFns ...networkoptions.SetNetworkOptions) {
 	for _, set := range setNOFns {
-		set(n.Options)
+		if set != nil {
+			set(n.Options)
+		}
 	}
 }

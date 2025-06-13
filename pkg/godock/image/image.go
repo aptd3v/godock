@@ -25,7 +25,9 @@ type ImageConfig struct {
 // Use this method to set various pull options using functions from the imageoptions package.
 func (img *ImageConfig) SetPullOptions(setOFns ...imageoptions.SetPullOptFn) {
 	for _, set := range setOFns {
-		set(img.PullOptions)
+		if set != nil {
+			set(img.PullOptions)
+		}
 	}
 }
 
@@ -33,7 +35,9 @@ func (img *ImageConfig) SetPullOptions(setOFns ...imageoptions.SetPullOptFn) {
 // Use this method to set various push options using functions from the imageoptions package.
 func (img *ImageConfig) SetPushOptions(setOFns ...imageoptions.SetPushOptFn) {
 	for _, set := range setOFns {
-		set(img.PushOptions)
+		if set != nil {
+			set(img.PushOptions)
+		}
 	}
 }
 
@@ -41,7 +45,9 @@ func (img *ImageConfig) SetPushOptions(setOFns ...imageoptions.SetPushOptFn) {
 // Use this method to set various build options using functions from the imageoptions package.
 func (img *ImageConfig) SetBuildOptions(setOFns ...imageoptions.SetBuildOptFn) {
 	for _, set := range setOFns {
-		set(img.BuildOptions)
+		if set != nil {
+			set(img.BuildOptions)
+		}
 	}
 }
 

@@ -14,7 +14,9 @@ type Endpoint struct {
 // SetEndpointSetting applies the provided endpoint settings
 func (ew *Endpoint) SetEndpointSetting(setEpSFns ...SetEndpointSettingsFn) {
 	for _, set := range setEpSFns {
-		set(ew.Settings)
+		if set != nil {
+			set(ew.Settings)
+		}
 	}
 }
 

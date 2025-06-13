@@ -19,7 +19,9 @@ func (v *VolumeConfig) String() string {
 // Use this method to set various volume options using functions from the volumeopt package.
 func (v *VolumeConfig) SetOptions(setVOFns ...volumeoptions.SetVolumeOptFn) {
 	for _, set := range setVOFns {
-		set(v.Options)
+		if set != nil {
+			set(v.Options)
+		}
 	}
 }
 

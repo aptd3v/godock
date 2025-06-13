@@ -29,7 +29,9 @@ func (c *ContainerConfig) String() string {
 // Use this method to set various host options using functions from the hostopt package.
 func (c *ContainerConfig) SetHostOptions(setHOFns ...hostoptions.SetHostOptFn) {
 	for _, set := range setHOFns {
-		set(c.HostOptions)
+		if set != nil {
+			set(c.HostOptions)
+		}
 	}
 }
 
@@ -37,7 +39,9 @@ func (c *ContainerConfig) SetHostOptions(setHOFns ...hostoptions.SetHostOptFn) {
 // Use this method to set various network options using functions from the netopt package.
 func (c *ContainerConfig) SetNetworkOptions(setNwOptFns ...networkoptions.SetContainerNetworkOptFn) {
 	for _, set := range setNwOptFns {
-		set(c.NetworkingOptions)
+		if set != nil {
+			set(c.NetworkingOptions)
+		}
 	}
 }
 
@@ -45,13 +49,17 @@ func (c *ContainerConfig) SetNetworkOptions(setNwOptFns ...networkoptions.SetCon
 // Use this method to set various container options using functions from the containeropt package.
 func (c *ContainerConfig) SetContainerOptions(setOFns ...containeroptions.SetOptionsFns) {
 	for _, set := range setOFns {
-		set(c.Options)
+		if set != nil {
+			set(c.Options)
+		}
 	}
 }
 
 func (c *ContainerConfig) SetPlatformOptions(setPOFns ...platformoptions.SetPlatformOptions) {
 	for _, set := range setPOFns {
-		set(c.PlatformOptions)
+		if set != nil {
+			set(c.PlatformOptions)
+		}
 	}
 }
 

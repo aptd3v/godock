@@ -379,7 +379,9 @@ func (c *Client) VolumePrune(ctx context.Context, pruneVolumeOptionFns ...PruneV
 		args.Add("all", "true")
 	}
 	for _, fn := range pruneVolumeOptionFns {
-		fn(&args)
+		if fn != nil {
+			fn(&args)
+		}
 	}
 	// Log the filter arguments
 	fmt.Printf("Volume prune filter args: %+v\n", args)
@@ -452,7 +454,9 @@ func (c *Client) VolumeList(ctx context.Context, volumeListOptionFns ...VolumeLi
 		Filters: filters.NewArgs(),
 	}
 	for _, fn := range volumeListOptionFns {
-		fn(&opts)
+		if fn != nil {
+			fn(&opts)
+		}
 	}
 	vols, err := c.wrapped.VolumeList(ctx, opts)
 	if err != nil {
@@ -507,7 +511,9 @@ func (c *Client) ImageList(ctx context.Context, imageListOptionFns ...ImageListO
 		Filters: filters.NewArgs(),
 	}
 	for _, fn := range imageListOptionFns {
-		fn(&opts)
+		if fn != nil {
+			fn(&opts)
+		}
 	}
 	imgs, err := c.wrapped.ImageList(ctx, opts)
 	if err != nil {
@@ -825,7 +831,9 @@ func WithNetworkInspectVerbose() NetworkInspectOptionFn {
 func (c *Client) NetworkInspect(ctx context.Context, networkID string, networkInspectOptionFns ...NetworkInspectOptionFn) (dockerNetwork.Inspect, error) {
 	opt := dockerNetwork.InspectOptions{}
 	for _, fn := range networkInspectOptionFns {
-		fn(&opt)
+		if fn != nil {
+			fn(&opt)
+		}
 	}
 	return c.wrapped.NetworkInspect(ctx, networkID, opt)
 }
@@ -843,7 +851,9 @@ func (c *Client) NetworkList(ctx context.Context, networkListOptionFns ...Networ
 		Filters: filters.NewArgs(),
 	}
 	for _, fn := range networkListOptionFns {
-		fn(&opts)
+		if fn != nil {
+			fn(&opts)
+		}
 	}
 	networks, err := c.wrapped.NetworkList(ctx, opts)
 	if err != nil {
@@ -905,7 +915,9 @@ func (c *Client) ContainerList(ctx context.Context, listOptionFns ...ListContain
 		Filters: filters.NewArgs(),
 	}
 	for _, fn := range listOptionFns {
-		fn(&listOpts)
+		if fn != nil {
+			fn(&listOpts)
+		}
 	}
 
 	containers, err := c.wrapped.ContainerList(ctx, listOpts)
@@ -979,7 +991,9 @@ func (c *Client) ContainerStatsOneShot(ctx context.Context, containerConfig *con
 func (c *Client) ImageCommit(ctx context.Context, containerConfig *container.ContainerConfig, imageConfig *image.ImageConfig, commitOptions ...commitoptions.CommitOptionsFn) (string, error) {
 	options := containerType.CommitOptions{}
 	for _, fn := range commitOptions {
-		fn(&options)
+		if fn != nil {
+			fn(&options)
+		}
 	}
 	res, err := c.wrapped.ContainerCommit(ctx, containerConfig.Id, options)
 	if err != nil {
@@ -995,7 +1009,9 @@ type UpdateOptionFn func(*containerType.UpdateConfig)
 func (c *Client) ContainerUpdate(ctx context.Context, containerConfig *container.ContainerConfig, updateOptions ...UpdateOptionFn) (*containerType.ContainerUpdateOKBody, error) {
 	options := containerType.UpdateConfig{}
 	for _, fn := range updateOptions {
-		fn(&options)
+		if fn != nil {
+			fn(&options)
+		}
 	}
 
 	res, err := c.wrapped.ContainerUpdate(ctx, containerConfig.Id, options)
@@ -1059,7 +1075,9 @@ func WithPruneFilter(key, value string) PruneOptionFn {
 func (c *Client) ContainerPrune(ctx context.Context, pruneOptions ...PruneOptionFn) (*containerType.PruneReport, error) {
 	filter := filters.NewArgs()
 	for _, fn := range pruneOptions {
-		fn(&filter)
+		if fn != nil {
+			fn(&filter)
+		}
 	}
 	prune, err := c.wrapped.ContainersPrune(ctx, filter)
 	if err != nil {
@@ -1071,7 +1089,9 @@ func (c *Client) ContainerPrune(ctx context.Context, pruneOptions ...PruneOption
 func (c *Client) ImagesPrune(ctx context.Context, pruneOptions ...PruneOptionFn) (*imageType.PruneReport, error) {
 	filter := filters.NewArgs()
 	for _, fn := range pruneOptions {
-		fn(&filter)
+		if fn != nil {
+			fn(&filter)
+		}
 	}
 	prune, err := c.wrapped.ImagesPrune(ctx, filter)
 	if err != nil {
@@ -1139,7 +1159,9 @@ func WithSearchFilters(filters filters.Args) ImageSearchOptionFn {
 func (c *Client) ImageSearch(ctx context.Context, query string, opts ...ImageSearchOptionFn) ([]registry.SearchResult, error) {
 	searchOpts := registry.SearchOptions{}
 	for _, fn := range opts {
-		fn(&searchOpts)
+		if fn != nil {
+			fn(&searchOpts)
+		}
 	}
 
 	results, err := c.wrapped.ImageSearch(ctx, query, searchOpts)

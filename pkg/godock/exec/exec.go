@@ -18,7 +18,9 @@ func NewConfig() *ExecConfig {
 
 func (c *ExecConfig) SetOptions(options ...execoptions.ExecOptionsFn) {
 	for _, option := range options {
-		option(c.Options)
+		if option != nil {
+			option(c.Options)
+		}
 	}
 }
 
