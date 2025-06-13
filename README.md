@@ -24,7 +24,7 @@ godock simplifies Docker operations in Go by providing:
 
 ## Installation
 
-Using `go get` (outside a module):
+Using `go get` 
 ```bash
 go get github.com/aptd3v/godock@latest
 ```
@@ -115,7 +115,7 @@ godock provides rich error types and helper functions for robust error handling:
 ```go
 import (
     "github.com/aptd3v/godock/pkg/godock"
-    "github.com/aptd3v/godock/pkg/godock/errors"
+    "github.com/aptd3v/godock/pkg/godock/errdefs"
 )
 
 // Create and start a container
@@ -123,18 +123,18 @@ err := client.ContainerCreate(ctx, config)
 if err != nil {
     // Check error types
     switch {
-    case errors.IsNotFound(err):
+    case errdefs.IsNotFound(err):
         // Handle missing image or resource
-        var nfe *errors.ResourceNotFoundError
-        if errors.As(err, &nfe) {
+        var nfe *errdefs.ResourceNotFoundError
+        if errdefs.As(err, &nfe) {
             log.Printf("Resource %s with ID %s not found", 
                 nfe.ResourceType, nfe.ID)
         }
         
-    case errors.IsAlreadyExists(err):
+    case errdefs.IsAlreadyExists(err):
         // Handle duplicate resources (e.g., container name)
-        var ee *errors.ResourceExistsError
-        if errors.As(err, &ee) {
+        var ee *errdefs.ResourceExistsError
+        if errdefs.As(err, &ee) {
             log.Printf("Resource %s with ID %s already exists", 
                 ee.ResourceType, ee.ID)
         }
@@ -146,40 +146,40 @@ if err != nil {
 err = client.ContainerStart(ctx, config)
 if err != nil {
     switch {
-    case errors.IsAlreadyExists(err):
+    case errdefs.IsAlreadyExists(err):
         // Handle resource conflicts (e.g., port already in use)
-        var ee *errors.ResourceExistsError
-        if errors.As(err, &ee) {
+        var ee *errdefs.ResourceExistsError
+        if errdefs.As(err, &ee) {
             log.Printf("Resource %s with ID %s already exists", 
                 ee.ResourceType, ee.ID)
         }
         
-    case errors.IsInvalidConfig(err):
+    case errdefs.IsInvalidConfig(err):
         // Handle configuration errors
-        var ve *errors.ValidationError
-        if errors.As(err, &ve) {
+        var ve *errdefs.ValidationError
+        if errdefs.As(err, &ve) {
             log.Printf("Invalid configuration for %s: %s", 
                 ve.Field, ve.Message)
         }
         
-    case errors.IsDaemonNotRunning(err):
+    case errdefs.IsDaemonNotRunning(err):
         // Handle Docker daemon issues
         log.Print("Docker daemon is not running")
         
-    case errors.IsTimeout(err):
-        // Handle timeout errors
+    case errdefs.IsTimeout(err):
+        // Handle timeout errdefs
         log.Print("Operation timed out")
         
     default:
         // Handle other error types
         switch e := err.(type) {
-        case *errors.ContainerError:
+        case *errdefs.ContainerError:
             log.Printf("Container %s: %s failed: %s", 
                 e.ID, e.Op, e.Message)
-        case *errors.NetworkError:
+        case *errdefs.NetworkError:
             log.Printf("Network %s: %s failed: %s", 
                 e.ID, e.Op, e.Message)
-        case *errors.VolumeError:
+        case *errdefs.VolumeError:
             log.Printf("Volume %s: %s failed: %s", 
                 e.Name, e.Op, e.Message)
         }
@@ -188,7 +188,7 @@ if err != nil {
 ```
 
 # Key features:
-- Type-safe error checking with `errors.Is` and `errors.As`
+- Type-safe error checking with `errdefs.Is` and `errdefs.As`
 - Resource-specific error types (Container, Network, Volume)
 - Operation-specific error handling (Create vs Start)
 - Detailed error context (resource IDs, operation names, messages)
@@ -199,7 +199,7 @@ if err != nil {
   - `ContainerError`: General container operation failures
   - `NetworkError`: Network operation failures
   - `VolumeError`: Volume operation failures
-- Operation errors:
+- Operation errdefs:
   - `Timeout`: Operation exceeded time limit
   - `Canceled`: Operation was canceled
   - `DaemonNotRunning`: Docker daemon unavailable
@@ -213,7 +213,7 @@ godock/
 │   └── godock/            # Main package
 │       ├── client.go      # Core client
 │       ├── container/     # Container operations
-│       ├── errors/        # Error handling
+│       ├── errdefs/       # Error handling
 │       ├── exec/          # Exec operations
 │       ├── image/         # Image operations
 │       ├── network/       # Network operations

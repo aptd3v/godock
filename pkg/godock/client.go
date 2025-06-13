@@ -10,7 +10,7 @@ import (
 
 	"github.com/aptd3v/godock/pkg/godock/commitoptions"
 	"github.com/aptd3v/godock/pkg/godock/container"
-	"github.com/aptd3v/godock/pkg/godock/errors"
+	"github.com/aptd3v/godock/pkg/godock/errdefs"
 	"github.com/aptd3v/godock/pkg/godock/exec"
 	"github.com/aptd3v/godock/pkg/godock/image"
 	"github.com/aptd3v/godock/pkg/godock/network"
@@ -33,7 +33,7 @@ type Client struct {
 
 func (c *Client) ContainerCreate(ctx context.Context, containerConfig *container.ContainerConfig) error {
 	if containerConfig == nil {
-		return &errors.ValidationError{
+		return &errdefs.ValidationError{
 			Field:   "containerConfig",
 			Message: "container config cannot be nil",
 		}
@@ -49,7 +49,7 @@ func (c *Client) ContainerCreate(ctx context.Context, containerConfig *container
 	)
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			return &errors.ResourceNotFoundError{
+			return &errdefs.ResourceNotFoundError{
 				ResourceType: "image",
 				ID:           containerConfig.Options.Image,
 			}
@@ -57,13 +57,13 @@ func (c *Client) ContainerCreate(ctx context.Context, containerConfig *container
 		// Check for conflicts
 		if strings.Contains(err.Error(), "Conflict") {
 			if strings.Contains(err.Error(), "is already in use") {
-				return &errors.ResourceExistsError{
+				return &errdefs.ResourceExistsError{
 					ResourceType: "container",
 					ID:           containerConfig.Name,
 				}
 			}
 		}
-		return &errors.ContainerError{
+		return &errdefs.ContainerError{
 			ID:      containerConfig.Name,
 			Op:      "create",
 			Message: err.Error(),
@@ -76,7 +76,7 @@ func (c *Client) ContainerCreate(ctx context.Context, containerConfig *container
 
 func (c *Client) ContainerStart(ctx context.Context, containerConfig *container.ContainerConfig) error {
 	if containerConfig == nil || containerConfig.Id == "" {
-		return &errors.ValidationError{
+		return &errdefs.ValidationError{
 			Field:   "containerConfig",
 			Message: "container config or ID cannot be empty",
 		}
@@ -85,18 +85,18 @@ func (c *Client) ContainerStart(ctx context.Context, containerConfig *container.
 	err := c.wrapped.ContainerStart(ctx, containerConfig.Id, containerType.StartOptions{})
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			return &errors.ResourceNotFoundError{
+			return &errdefs.ResourceNotFoundError{
 				ResourceType: "container",
 				ID:           containerConfig.Name,
 			}
 		}
 		if strings.Contains(err.Error(), "port is already allocated") {
-			return &errors.ResourceExistsError{
+			return &errdefs.ResourceExistsError{
 				ResourceType: "port",
 				ID:           containerConfig.Name,
 			}
 		}
-		return &errors.ContainerError{
+		return &errdefs.ContainerError{
 			ID:      containerConfig.Name,
 			Op:      "start",
 			Message: err.Error(),
@@ -159,7 +159,7 @@ func (c *Client) ContainerWait(ctx context.Context, containerConfig *container.C
 
 func (c *Client) NetworkCreate(ctx context.Context, networkConfig *network.NetworkConfig) error {
 	if networkConfig == nil || networkConfig.Name == "" {
-		return &errors.ValidationError{
+		return &errdefs.ValidationError{
 			Field:   "networkConfig",
 			Message: "network config or name cannot be empty",
 		}
@@ -168,12 +168,12 @@ func (c *Client) NetworkCreate(ctx context.Context, networkConfig *network.Netwo
 	res, err := c.wrapped.NetworkCreate(ctx, networkConfig.Name, *networkConfig.Options)
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			return &errors.ResourceNotFoundError{
+			return &errdefs.ResourceNotFoundError{
 				ResourceType: "network driver",
 				ID:           networkConfig.Options.Driver,
 			}
 		}
-		return &errors.NetworkError{
+		return &errdefs.NetworkError{
 			ID:      networkConfig.Name,
 			Op:      "create",
 			Message: err.Error(),
@@ -185,7 +185,7 @@ func (c *Client) NetworkCreate(ctx context.Context, networkConfig *network.Netwo
 
 func (c *Client) VolumeCreate(ctx context.Context, volumeConfig *volume.VolumeConfig) error {
 	if volumeConfig == nil || volumeConfig.Options == nil {
-		return &errors.ValidationError{
+		return &errdefs.ValidationError{
 			Field:   "volumeConfig",
 			Message: "volume config cannot be nil",
 		}
@@ -196,12 +196,12 @@ func (c *Client) VolumeCreate(ctx context.Context, volumeConfig *volume.VolumeCo
 	vol, err := c.wrapped.VolumeCreate(ctx, *volumeConfig.Options)
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			return &errors.ResourceNotFoundError{
+			return &errdefs.ResourceNotFoundError{
 				ResourceType: "volume driver",
 				ID:           volumeConfig.Options.Driver,
 			}
 		}
-		return &errors.VolumeError{
+		return &errdefs.VolumeError{
 			Name:    volumeConfig.Options.Name,
 			Op:      "create",
 			Message: err.Error(),
@@ -216,7 +216,7 @@ func (c *Client) VolumeCreate(ctx context.Context, volumeConfig *volume.VolumeCo
 // It's up to the caller to handle the io.ReadCloser and close it properly.
 func (c *Client) ImagePull(ctx context.Context, imageConfig *image.ImageConfig) (io.ReadCloser, error) {
 	if imageConfig == nil || imageConfig.Ref == "" {
-		return nil, &errors.ValidationError{
+		return nil, &errdefs.ValidationError{
 			Field:   "imageConfig",
 			Message: "image config or reference cannot be empty",
 		}
@@ -225,12 +225,12 @@ func (c *Client) ImagePull(ctx context.Context, imageConfig *image.ImageConfig) 
 	rc, err := c.wrapped.ImagePull(ctx, imageConfig.Ref, *imageConfig.PullOptions)
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			return nil, &errors.ResourceNotFoundError{
+			return nil, &errdefs.ResourceNotFoundError{
 				ResourceType: "image",
 				ID:           imageConfig.Ref,
 			}
 		}
-		return nil, &errors.ImageError{
+		return nil, &errdefs.ImageError{
 			Ref:     imageConfig.Ref,
 			Op:      "pull",
 			Message: err.Error(),
@@ -260,19 +260,19 @@ func NewClient(ctx context.Context) (*Client, error) {
 		client.WithAPIVersionNegotiation(),
 	)
 	if err != nil {
-		return nil, &errors.ConfigError{
+		return nil, &errdefs.ConfigError{
 			Field:   "client",
 			Message: err.Error(),
 		}
 	}
 	ok, err := isDaemonRunning(ctx, c)
 	if err != nil {
-		return nil, &errors.DaemonNotRunningError{
+		return nil, &errdefs.DaemonNotRunningError{
 			Message: err.Error(),
 		}
 	}
 	if !ok {
-		return nil, errors.ErrDaemonNotRunning
+		return nil, errdefs.ErrDaemonNotRunning
 	}
 	return &Client{
 		wrapped: c,
@@ -541,14 +541,14 @@ func (c *Client) RunAndWait(ctx context.Context, containerConfig *container.Cont
 	statusCh, errCh := c.ContainerWait(ctx, containerConfig)
 	select {
 	case err := <-errCh:
-		return &errors.ContainerError{
+		return &errdefs.ContainerError{
 			ID:      containerConfig.Name,
 			Op:      "wait",
 			Message: err.Error(),
 		}
 	case status := <-statusCh:
 		if status.StatusCode != 0 {
-			return &errors.ContainerError{
+			return &errdefs.ContainerError{
 				ID:      containerConfig.Name,
 				Op:      "run",
 				Message: fmt.Sprintf("exited with code %d", status.StatusCode),
@@ -558,9 +558,9 @@ func (c *Client) RunAndWait(ctx context.Context, containerConfig *container.Cont
 	case <-ctx.Done():
 		switch ctx.Err() {
 		case context.DeadlineExceeded:
-			return errors.ErrTimeout
+			return errdefs.ErrTimeout
 		case context.Canceled:
-			return errors.ErrCanceled
+			return errdefs.ErrCanceled
 		default:
 			return ctx.Err()
 		}
@@ -727,7 +727,7 @@ func (c *Client) ContainerExecAttach(ctx context.Context, execID string, execCon
 
 func (c *Client) ContainerExecCreate(ctx context.Context, containerConfig *container.ContainerConfig, execConfig *exec.ExecConfig) (string, error) {
 	if containerConfig == nil || execConfig == nil {
-		return "", &errors.ValidationError{
+		return "", &errdefs.ValidationError{
 			Field:   "config",
 			Message: "container config and exec config cannot be nil",
 		}
@@ -736,12 +736,12 @@ func (c *Client) ContainerExecCreate(ctx context.Context, containerConfig *conta
 	res, err := c.wrapped.ContainerExecCreate(ctx, containerConfig.Id, *execConfig.Options)
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			return "", &errors.ResourceNotFoundError{
+			return "", &errdefs.ResourceNotFoundError{
 				ResourceType: "container",
 				ID:           containerConfig.Id,
 			}
 		}
-		return "", &errors.ExecError{
+		return "", &errdefs.ExecError{
 			ID:      containerConfig.Id,
 			Op:      "create",
 			Message: err.Error(),
@@ -753,7 +753,7 @@ func (c *Client) ContainerExecCreate(ctx context.Context, containerConfig *conta
 
 func (c *Client) ContainerExecStart(ctx context.Context, containerConfig *container.ContainerConfig, execConfig *exec.ExecConfig) error {
 	if execConfig == nil || execConfig.ID == "" {
-		return &errors.ValidationError{
+		return &errdefs.ValidationError{
 			Field:   "execConfig",
 			Message: "exec config or ID cannot be empty",
 		}
@@ -766,12 +766,12 @@ func (c *Client) ContainerExecStart(ctx context.Context, containerConfig *contai
 	})
 	if err != nil {
 		if client.IsErrNotFound(err) {
-			return &errors.ResourceNotFoundError{
+			return &errdefs.ResourceNotFoundError{
 				ResourceType: "exec",
 				ID:           execConfig.ID,
 			}
 		}
-		return &errors.ExecError{
+		return &errdefs.ExecError{
 			ID:      execConfig.ID,
 			Op:      "start",
 			Message: err.Error(),
